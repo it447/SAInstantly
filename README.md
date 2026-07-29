@@ -19,16 +19,23 @@ Lead/contact data is never deleted — enrollments are only ever marked `complet
 
 ## Architecture
 
+Vercel's Python runtime only recognizes a single entrypoint per project (it errors
+out if it finds more than one file exporting a `handler`/`app`), so all routes are
+served from one catch-all dynamic route, `api/[...path].py`, which dispatches to
+plain view functions based on the real request path:
+
 ```
 api/
+  [...path].py     single entrypoint; dispatches (method, path) -> view function
   _lib/            shared helpers (redis, auth, gmail, hubspot, scheduling, models)
-  auth/            login / logout / session status
-  accounts/        Gmail OAuth connect/callback + account management
-  sequences/       sequence CRUD + activity logs
-  hubspot/         API key + list-to-sequence mapping config
-  cron/            send.py (every 15 min), poll_replies.py (every 30 min), hubspot_sync.py (every 15 min)
-  unsubscribe.py   public unsubscribe landing page
-  dashboard/       stats endpoint
+  _views/
+    auth.py        login / logout / session status
+    accounts.py    Gmail OAuth connect/callback + account management
+    sequences.py   sequence CRUD + activity logs
+    hubspot.py     API key + list-to-sequence mapping config
+    cron.py        send (every 15 min), poll_replies (every 30 min), hubspot_sync (every 15 min)
+    dashboard.py   stats endpoint
+    unsubscribe.py public unsubscribe landing page
 public/            static vanilla JS/HTML/CSS frontend
 ```
 

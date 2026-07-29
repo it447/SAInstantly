@@ -1,22 +1,14 @@
 import os
-import sys
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from _lib import models
 from _lib.auth import require_auth
-from _lib.http import BaseHandler
 from _lib.utils import today_str_local
 
 
 def _gather():
     date_str = today_str_local()
 
-    # Each of these is an independent Upstash REST round-trip; fan them out
-    # concurrently instead of paying their latency one after another so the
-    # dashboard loads fast.
     jobs = {
         "sequences": models.list_sequences,
         "accounts": models.list_accounts,
@@ -61,8 +53,7 @@ def _gather():
     }
 
 
-class handler(BaseHandler):
-    def do_GET(self):
-        if not require_auth(self):
-            return
-        self._send_json(200, _gather())
+def stats(self):
+    if not require_auth(self):
+        return
+    self._send_json(200, _gather())
