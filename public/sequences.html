@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sequences — Cold Email Sequencer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav class="nav" id="nav"></nav>
+  <div class="container">
+    <h1>Sequences</h1>
+
+    <div class="row" style="align-items:flex-start">
+      <div class="card" style="flex: 0 0 260px">
+        <h2>All sequences</h2>
+        <div id="sequence-list"></div>
+        <button class="btn" id="new-btn" style="width:100%; margin-top:0.75rem">+ New sequence</button>
+      </div>
+
+      <div class="card" style="flex:1">
+        <div class="row" style="align-items:center; margin-bottom:1rem">
+          <h2 style="margin:0" id="editor-title">New sequence</h2>
+          <div style="flex:0; display:flex; gap:0.5rem; white-space:nowrap">
+            <select id="status-select" style="width:auto">
+              <option value="active">Active</option>
+              <option value="paused">Paused</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="name">Sequence name</label>
+          <input id="name" placeholder="e.g. Cold outbound — SaaS founders">
+        </div>
+
+        <div class="muted" style="font-size:0.85rem; margin-bottom:1rem">
+          Merge tags available in subject/body: <code>{{first_name}}</code> <code>{{last_name}}</code>
+          <code>{{company}}</code> <code>{{email}}</code>. An unsubscribe link is appended to every email automatically.
+        </div>
+
+        <div id="steps"></div>
+        <button class="btn secondary" id="add-step-btn">+ Add step</button>
+
+        <div style="margin-top:1.5rem; display:flex; gap:0.75rem">
+          <button class="btn" id="save-btn">Save sequence</button>
+          <button class="btn danger" id="delete-btn" style="display:none">Delete</button>
+        </div>
+        <div class="error" id="form-error" style="display:none"></div>
+        <div class="success" id="form-success" style="display:none"></div>
+      </div>
+    </div>
+
+    <div class="section card" id="logs-card" style="display:none; margin-top:2rem">
+      <h2>Activity log</h2>
+      <table>
+        <thead><tr><th>Time</th><th>Event</th><th>Contact</th><th>Detail</th></tr></thead>
+        <tbody id="logs-body"></tbody>
+      </table>
+      <div class="empty" id="logs-empty" style="display:none">No activity yet.</div>
+    </div>
+  </div>
+
+  <template id="step-template">
+    <div class="step-card">
+      <button class="btn secondary step-remove" type="button">&times;</button>
+      <div class="field">
+        <label>Delay before sending (days after previous step; 0 for the first step)</label>
+        <input type="number" min="0" class="step-delay" value="0" style="width:120px">
+      </div>
+      <div class="field">
+        <label>Subject</label>
+        <input class="step-subject" placeholder="Quick question about {{company}}">
+      </div>
+      <div class="field">
+        <label>Body</label>
+        <textarea class="step-body" placeholder="Hi {{first_name}},\n\n..."></textarea>
+      </div>
+    </div>
+  </template>
+
+  <script src="/js/api.js"></script>
+  <script>
+    let sequences = [];
+    let currentId = null;
+
+    function addStepRow(step) {
+      const tpl = document.getElementById("step-template");
+      const node = tpl.content.cloneNode(true);
+      const card = node.querySelector(".step-card");
+      if (step) {
+        card.querySelector(".step-delay").value = step.delay_days;
+        card.querySelector(".step-subject").value = step.subject;
+        card.querySelector(".step-body").value = step.body;
+      }
+      card.querySelector(".step-remove").addEventListener("click", () => card.remove());
+      document.getElementById("steps").appendChild(node);
+    }
+
+    function readSteps() {
+      return Array.from(document.querySelectorAll(".step-card")).map((card) => ({
+        delay_days: Number(card.querySelector(".step-delay").value || 0),
+        subject: card.querySelector(".step-subject").value,
+        body: card.querySelector(".step-body").value,
+      }));
+    }
+
+    function resetEditor() {
+      currentId = null;
+      document.getElementById("editor-title").textContent = "New sequence";
+      document.getElementById("name").value = "";
+      document.getElementById("status-select").value = "active";
+      document.getElementById("steps").innerHTML = "";
+      document.getElementById("delete-btn").style.display = "none";
+      document.getElementById("logs-card").style.display = "none";
+      addStepRow();
+      renderList();
+    }
+
+    function loadIntoEditor(seq) {
+      currentId = seq.id;
+      document.getElementById("editor-title").textContent = seq.name;
+      document.getElementById("name").value = seq.name;
+      document.getElementById("status-select").value = seq.status;
+      document.getElementById("steps").innerHTML = "";
+      seq.steps.forEach(addStepRow);
+      document.getElementById("delete-btn").style.display = "inline-flex";
+      renderList();
+      loadLogs(seq.id);
+    }
+
+    function renderList() {
+      const el = document.getElementById("sequence-list");
+      if (sequences.length === 0) {
+        el.innerHTML = '<div class="empty">No sequences yet.</div>';
+        return;
+      }
+      el.innerHTML = sequences
+        .map(
+          (s) => `
+        <div style="padding:0.5rem 0; border-bottom:1px solid var(--border); cursor:pointer" data-id="${s.id}">
+          <div>${escapeHtml(s.name)}</div>
+          <span class="badge ${s.status}">${escapeHtml(s.status)}</span>
+          <span class="muted" style="font-size:0.8rem"> ${s.steps.length} step${s.steps.length === 1 ? "" : "s"}</span>
+        </div>`
+        )
+        .join("");
+      el.querySelectorAll("[data-id]").forEach((row) => {
+        row.addEventListener("click", () => {
+          const seq = sequences.find((s) => s.id === row.dataset.id);
+          if (seq) loadIntoEditor(seq);
+        });
+      });
+    }
+
+    async function loadLogs(id) {
+      const { logs } = await api(`/api/sequences/logs?id=${encodeURIComponent(id)}`);
+      const card = document.getElementById("logs-card");
+      const body = document.getElementById("logs-body");
+      const empty = document.getElementById("logs-empty");
+      card.style.display = "block";
+      body.innerHTML = "";
+      if (logs.length === 0) {
+        empty.style.display = "block";
+        return;
+      }
+      empty.style.display = "none";
+      logs.forEach((log) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${fmtDate(log.at)}</td>
+          <td><span class="badge ${log.type}">${escapeHtml(log.type)}</span></td>
+          <td>${escapeHtml(log.email || "")}</td>
+          <td class="muted">${escapeHtml(log.reason || log.error || log.subject || "")}</td>`;
+        body.appendChild(tr);
+      });
+    }
+
+    async function refreshSequences() {
+      const data = await api("/api/sequences/list");
+      sequences = data.sequences;
+      renderList();
+    }
+
+    document.getElementById("add-step-btn").addEventListener("click", () => addStepRow());
+    document.getElementById("new-btn").addEventListener("click", resetEditor);
+
+    document.getElementById("save-btn").addEventListener("click", async () => {
+      const errorEl = document.getElementById("form-error");
+      const successEl = document.getElementById("form-success");
+      errorEl.style.display = "none";
+      successEl.style.display = "none";
+      try {
+        const payload = {
+          id: currentId,
+          name: document.getElementById("name").value,
+          status: document.getElementById("status-select").value,
+          steps: readSteps(),
+        };
+        const { sequence } = await api("/api/sequences/save", { method: "POST", body: payload });
+        await refreshSequences();
+        loadIntoEditor(sequence);
+        successEl.textContent = "Saved.";
+        successEl.style.display = "block";
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.style.display = "block";
+      }
+    });
+
+    document.getElementById("delete-btn").addEventListener("click", async () => {
+      if (!currentId || !confirm("Delete this sequence? Enrolled contacts keep their history but new contacts can no longer be enrolled.")) return;
+      await api("/api/sequences/delete", { method: "POST", body: { id: currentId } });
+      await refreshSequences();
+      resetEditor();
+    });
+
+    async function init() {
+      renderNav("/sequences.html");
+      await refreshSequences();
+      const params = new URLSearchParams(window.location.search);
+      const id = params.get("id");
+      const seq = id && sequences.find((s) => s.id === id);
+      if (seq) {
+        loadIntoEditor(seq);
+      } else {
+        resetEditor();
+      }
+    }
+
+    init().catch((err) => {
+      if (err.message !== "unauthorized") console.error(err);
+    });
+  </script>
+</body>
+</html>

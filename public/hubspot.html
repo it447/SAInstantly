@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>HubSpot — Cold Email Sequencer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav class="nav" id="nav"></nav>
+  <div class="container">
+    <h1>HubSpot integration</h1>
+
+    <div class="card section">
+      <h2>API key</h2>
+      <p class="muted">Uses a HubSpot private app API key with CRM contacts + lists read access.</p>
+      <div class="row" style="align-items:flex-end">
+        <div class="field" style="margin-bottom:0">
+          <label for="api-key">API key</label>
+          <input id="api-key" type="password" placeholder="pat-na1-...">
+        </div>
+        <button class="btn" id="save-key-btn" style="flex:0">Save</button>
+      </div>
+      <div id="key-status" class="muted" style="margin-top:0.5rem; font-size:0.85rem"></div>
+      <div class="error" id="key-error" style="display:none"></div>
+    </div>
+
+    <div class="card section">
+      <h2>Connect a list to a sequence</h2>
+      <p class="muted">When a contact is added to this HubSpot list, they're automatically enrolled in the sequence
+        (each contact is enrolled at most once per sequence).</p>
+      <div class="row">
+        <div class="field">
+          <label for="list-id">HubSpot list ID</label>
+          <input id="list-id" placeholder="e.g. 42">
+        </div>
+        <div class="field">
+          <label for="sequence-select">Sequence</label>
+          <select id="sequence-select"></select>
+        </div>
+      </div>
+      <button class="btn" id="add-mapping-btn">Connect list</button>
+      <div class="error" id="mapping-error" style="display:none"></div>
+    </div>
+
+    <div class="card">
+      <h2>Connected lists</h2>
+      <table>
+        <thead><tr><th>List</th><th>Sequence</th><th></th></tr></thead>
+        <tbody id="mappings-body"></tbody>
+      </table>
+      <div class="empty" id="mappings-empty" style="display:none">No lists connected yet.</div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    async function loadSequenceOptions() {
+      const { sequences } = await api("/api/sequences/list");
+      const select = document.getElementById("sequence-select");
+      select.innerHTML = sequences
+        .map((s) => `<option value="${s.id}">${escapeHtml(s.name)}</option>`)
+        .join("");
+      if (sequences.length === 0) {
+        select.innerHTML = '<option value="">Create a sequence first</option>';
+      }
+    }
+
+    function renderMappings(mappings) {
+      const body = document.getElementById("mappings-body");
+      body.innerHTML = "";
+      if (mappings.length === 0) {
+        document.getElementById("mappings-empty").style.display = "block";
+        return;
+      }
+      document.getElementById("mappings-empty").style.display = "none";
+      mappings.forEach((m) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${escapeHtml(m.list_name)} <span class="muted">(#${escapeHtml(m.list_id)})</span></td>
+          <td>${escapeHtml(m.sequence_name)}</td>
+          <td><button class="btn secondary remove-btn" data-id="${m.list_id}">Remove</button></td>`;
+        body.appendChild(tr);
+      });
+      document.querySelectorAll(".remove-btn").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          await api("/api/hubspot/remove_mapping", { method: "POST", body: { list_id: btn.dataset.id } });
+          loadConfig();
+        });
+      });
+    }
+
+    async function loadConfig() {
+      const config = await api("/api/hubspot/config");
+      document.getElementById("key-status").textContent = config.has_api_key
+        ? "API key is set."
+        : "No API key saved yet.";
+      renderMappings(config.mappings);
+    }
+
+    document.getElementById("save-key-btn").addEventListener("click", async () => {
+      const errorEl = document.getElementById("key-error");
+      errorEl.style.display = "none";
+      try {
+        await api("/api/hubspot/save_key", { method: "POST", body: { api_key: document.getElementById("api-key").value } });
+        document.getElementById("api-key").value = "";
+        loadConfig();
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.style.display = "block";
+      }
+    });
+
+    document.getElementById("add-mapping-btn").addEventListener("click", async () => {
+      const errorEl = document.getElementById("mapping-error");
+      errorEl.style.display = "none";
+      try {
+        await api("/api/hubspot/add_mapping", {
+          method: "POST",
+          body: {
+            list_id: document.getElementById("list-id").value,
+            sequence_id: document.getElementById("sequence-select").value,
+          },
+        });
+        document.getElementById("list-id").value = "";
+        loadConfig();
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.style.display = "block";
+      }
+    });
+
+    async function init() {
+      renderNav("/hubspot.html");
+      await Promise.all([loadSequenceOptions(), loadConfig()]);
+    }
+
+    init().catch((err) => {
+      if (err.message !== "unauthorized") console.error(err);
+    });
+  </script>
+</body>
+</html>
