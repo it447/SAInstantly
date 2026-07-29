@@ -2,11 +2,12 @@
 
 Vercel's Python runtime supports exactly one recognized entrypoint per
 project (it errors out if it finds more than one file exporting a
-`handler`/`app`), so every route is dispatched from here rather than from
-one file per endpoint. This file is a catch-all dynamic route
-(`[...path]`), so Vercel's filesystem router forwards every request under
-`/api/*` to it; `self.path` still carries the real request path (e.g.
-`/api/sequences/save`), which is used below to pick the right view.
+`handler`/`app`, and even a single file needs its module path declared in
+pyproject.toml's `[tool.vercel] entrypoint`), so every route is dispatched
+from here rather than from one file per endpoint. vercel.json rewrites all
+`/api/*` requests to this file; `self.path` still carries the real request
+path (e.g. `/api/sequences/save`), which is used below to pick the right
+view.
 """
 import sys
 from pathlib import Path
