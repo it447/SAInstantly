@@ -15,6 +15,21 @@ def config(self):
     )
 
 
+def properties(self):
+    if not require_auth(self):
+        return
+    cfg = models.get_hubspot_config()
+    if not cfg.get("api_key"):
+        self._send_json(400, {"error": "connect a HubSpot API key first"})
+        return
+    try:
+        props = hubspot_client.get_contact_properties(cfg["api_key"])
+    except Exception:
+        self._send_json(502, {"error": "could not load contact properties from HubSpot"})
+        return
+    self._send_json(200, {"properties": props})
+
+
 def save_key(self):
     if not require_auth(self):
         return

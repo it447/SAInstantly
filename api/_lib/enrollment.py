@@ -16,7 +16,9 @@ def _queue_member(sequence_id, email):
 
 
 def enroll_contact(sequence_id, contact, source="hubspot"):
-    """contact: dict with at least `email`, optionally first_name/last_name/company/hubspot_id.
+    """contact: dict with `email`, `hubspot_id`, and `properties` (a flat
+    dict keyed by HubSpot's own property names, e.g. "firstname" - matching
+    whatever merge tags the sequence's steps reference).
     Returns the enrollment dict, or None if the contact was already enrolled
     in this sequence before (dedup).
     """
@@ -37,10 +39,8 @@ def enroll_contact(sequence_id, contact, source="hubspot"):
         "email": email,
         "contact": {
             "email": email,
-            "first_name": contact.get("first_name", ""),
-            "last_name": contact.get("last_name", ""),
-            "company": contact.get("company", ""),
             "hubspot_id": contact.get("hubspot_id"),
+            "properties": contact.get("properties", {}),
         },
         "sequence_id": sequence_id,
         "step_index": 0,

@@ -3,7 +3,7 @@ import time
 
 from _lib import enrollment, gmail, hubspot_client, models
 from _lib.auth import require_cron_auth
-from _lib.utils import now_local, render_merge_tags, send_window_hours, unsubscribe_link
+from _lib.utils import now_local, render_merge_tags, send_window_hours, sequence_merge_tag_properties, unsubscribe_link
 
 BATCH_SIZE = 100
 
@@ -20,11 +20,12 @@ def _sync_mapping(mapping):
 
     member_ids = hubspot_client.get_all_list_member_ids(api_key, list_id)
     new_ids = [i for i in member_ids if not models.hubspot_contact_seen(list_id, i)]
+    needed_properties = sequence_merge_tag_properties(sequence)
 
     enrolled = 0
     for i in range(0, len(new_ids), BATCH_SIZE):
         chunk = new_ids[i : i + BATCH_SIZE]
-        contacts = hubspot_client.batch_read_contacts(api_key, chunk)
+        contacts = hubspot_client.batch_read_contacts(api_key, chunk, properties=needed_properties)
         contacts_by_id = {c["hubspot_id"]: c for c in contacts}
 
         for hubspot_id in chunk:
@@ -70,7 +71,7 @@ def _in_send_window():
 
 
 def _build_body(step, contact, sequence_id):
-    rendered = render_merge_tags(step["body"], contact)
+    rendered = render_merge_tags(step["body"], contact.get("properties", {}))
     link = unsubscribe_link(contact["email"], sequence_id)
     return f"{rendered}\n\n---\nUnsubscribe: {link}"
 
@@ -124,7 +125,7 @@ def _run_send():
 
         step = steps[step_index]
         contact = enr["contact"]
-        subject = render_merge_tags(step["subject"], contact)
+        subject = render_merge_tags(step["subject"], contact.get("properties", {}))
         body = _build_body(step, contact, sequence_id)
 
         try:

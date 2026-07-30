@@ -32,6 +32,7 @@ ROUTES = {
     ("POST", "/api/sequences/delete"): sequences.delete,
     ("GET", "/api/sequences/logs"): sequences.logs,
     ("GET", "/api/hubspot/config"): hubspot.config,
+    ("GET", "/api/hubspot/properties"): hubspot.properties,
     ("POST", "/api/hubspot/save_key"): hubspot.save_key,
     ("POST", "/api/hubspot/add_mapping"): hubspot.add_mapping,
     ("POST", "/api/hubspot/remove_mapping"): hubspot.remove_mapping,

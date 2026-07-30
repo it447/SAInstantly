@@ -42,14 +42,23 @@ def get_all_list_member_ids(api_key, list_id):
     return all_ids
 
 
-def batch_read_contacts(api_key, contact_ids, properties=("email", "firstname", "lastname", "company")):
+DEFAULT_PROPERTIES = ("email", "firstname", "lastname", "company")
+
+
+def batch_read_contacts(api_key, contact_ids, properties=DEFAULT_PROPERTIES):
+    """Returns a list of {email, hubspot_id, properties: {name: value}} using
+    HubSpot's own internal property names (e.g. "firstname", not
+    "first_name"), so merge tags typed as {{firstname}} line up exactly with
+    what a user picks from the contact-properties list.
+    """
     if not contact_ids:
         return []
+    properties = list(dict.fromkeys(list(properties) + ["email"]))  # email is always required, no dupes
     resp = requests.post(
         f"{API_BASE}/crm/v3/objects/contacts/batch/read",
         headers=_headers(api_key),
         json={
-            "properties": list(properties),
+            "properties": properties,
             "inputs": [{"id": cid} for cid in contact_ids],
         },
         timeout=20,
@@ -59,15 +68,41 @@ def batch_read_contacts(api_key, contact_ids, properties=("email", "firstname", 
     contacts = []
     for r in results:
         props = r.get("properties", {})
-        if not props.get("email"):
+        email = props.get("email")
+        if not email:
             continue
         contacts.append(
             {
-                "email": props["email"].strip().lower(),
-                "first_name": props.get("firstname") or "",
-                "last_name": props.get("lastname") or "",
-                "company": props.get("company") or "",
+                "email": email.strip().lower(),
                 "hubspot_id": r.get("id"),
+                "properties": {name: (props.get(name) or "") for name in properties},
             }
         )
     return contacts
+
+
+def get_contact_properties(api_key):
+    """Returns the list of contact properties available for personalization:
+    [{name, label, group_name}], skipping hidden/calculated/read-only ones
+    that wouldn't make sense as merge tags.
+    """
+    resp = requests.get(
+        f"{API_BASE}/crm/v3/properties/contacts",
+        headers=_headers(api_key),
+        timeout=15,
+    )
+    resp.raise_for_status()
+    results = resp.json().get("results", [])
+    properties = []
+    for p in results:
+        if p.get("hidden") or p.get("calculated"):
+            continue
+        properties.append(
+            {
+                "name": p["name"],
+                "label": p.get("label") or p["name"],
+                "group_name": p.get("groupName") or "",
+            }
+        )
+    properties.sort(key=lambda p: (p["group_name"], p["label"]))
+    return properties

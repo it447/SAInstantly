@@ -7,7 +7,11 @@ Python/Vercel serverless functions + Upstash Redis + vanilla JS frontend.
 
 - Password-protected login (session stored in Redis)
 - Connect one or more Gmail accounts via OAuth, for inbox rotation
-- Multi-step sequence builder with merge tags (`{{first_name}}`, `{{last_name}}`, `{{company}}`, `{{email}}`) and per-step delay
+- Multi-step sequence builder with merge tags and per-step delay. Merge tags use HubSpot's own contact
+  property names (e.g. `{{firstname}}`, `{{company}}`) so the sequence editor's "Insert merge tag" picker
+  can search your actual HubSpot contact properties (`GET /api/hubspot/properties`) and drop the right tag
+  in with a click — no HubSpot key connected yet just falls back to a small default set
+  (`email`, `firstname`, `lastname`, `company`)
 - HubSpot list → sequence connection: new list members are auto-enrolled (deduped so a contact is never enrolled twice in the same sequence)
 - Scheduled sending (cron every 15 min) that spreads emails between 8am–6pm ET, respects a global daily cap (default 500) and per-account daily limits
 - Reply detection (cron every 30 min) that stops a contact's sequence automatically
