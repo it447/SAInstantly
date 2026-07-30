@@ -52,7 +52,7 @@ class handler(BaseHandler):
         path = urlparse(self.path).path.rstrip("/") or "/"
         view = ROUTES.get((method, path))
         if view is None:
-            self._send_json(404, {"error": "not found"})
+            self._send_json(404, {"error": "not found", "method": method, "path": path, "raw_path": self.path})
             return
         view(self)
 
