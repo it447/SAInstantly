@@ -23,16 +23,19 @@
       <p class="muted">When a contact is added to this HubSpot list, they're automatically enrolled in the sequence
         (each contact is enrolled at most once per sequence).</p>
       <div class="row">
-        <div class="field">
-          <label for="list-select">HubSpot list</label>
-          <select id="list-select"></select>
+        <div class="field token-picker">
+          <label for="list-search">HubSpot list</label>
+          <input type="text" id="list-search" placeholder="Search lists…" autocomplete="off">
+          <div class="token-dropdown" id="list-dropdown" style="display:none">
+            <div class="token-list" id="list-options"></div>
+          </div>
         </div>
         <div class="field">
           <label for="sequence-select">Sequence</label>
           <select id="sequence-select"></select>
         </div>
       </div>
-      <button class="btn" id="add-mapping-btn">Connect list</button>
+      <button class="btn" id="add-mapping-btn" disabled>Connect list</button>
       <div class="error" id="mapping-error" style="display:none"></div>
     </div>
 
@@ -49,6 +52,8 @@
   <script src="/js/api.js"></script>
   <script>
     let apiKeyConfigured = false;
+    let hubspotLists = [];
+    let selectedListId = "";
 
     async function loadSequenceOptions() {
       const { sequences } = await api("/api/sequences/list");
@@ -61,25 +66,69 @@
       }
     }
 
+    function selectList(list) {
+      selectedListId = list ? list.id : "";
+      document.getElementById("list-search").value = list ? list.name : "";
+      document.getElementById("add-mapping-btn").disabled = !selectedListId;
+      document.getElementById("list-dropdown").style.display = "none";
+    }
+
+    function renderListOptions(filter) {
+      const dropdown = document.getElementById("list-dropdown");
+      const optionsEl = document.getElementById("list-options");
+      const f = (filter || "").toLowerCase();
+      const matches = hubspotLists.filter((l) => l.name.toLowerCase().includes(f));
+      optionsEl.innerHTML = matches.length
+        ? matches
+            .map(
+              (l) =>
+                `<div class="token-item" data-id="${escapeHtml(l.id)}">${escapeHtml(l.name)}<div class="name">#${escapeHtml(l.id)}</div></div>`
+            )
+            .join("")
+        : '<div class="muted" style="padding:0.4rem 0.5rem">No matching lists</div>';
+      optionsEl.querySelectorAll(".token-item").forEach((item) => {
+        item.addEventListener("click", () => {
+          selectList(hubspotLists.find((l) => l.id === item.dataset.id));
+        });
+      });
+      dropdown.style.display = "block";
+    }
+
     async function loadListOptions() {
-      const select = document.getElementById("list-select");
+      const searchInput = document.getElementById("list-search");
       const addBtn = document.getElementById("add-mapping-btn");
+      selectList(null);
+
       if (!apiKeyConfigured) {
-        select.innerHTML = '<option value="">Set HUBSPOT_API_KEY in Vercel first</option>';
-        addBtn.disabled = true;
+        searchInput.disabled = true;
+        searchInput.placeholder = "Set HUBSPOT_API_KEY in Vercel first";
         return;
       }
       try {
         const { lists } = await api("/api/hubspot/lists");
-        addBtn.disabled = false;
-        select.innerHTML = lists.length
-          ? lists.map((l) => `<option value="${l.id}">${escapeHtml(l.name)}</option>`).join("")
-          : '<option value="">No contact lists found in HubSpot</option>';
+        hubspotLists = lists;
+        searchInput.disabled = false;
+        searchInput.placeholder = lists.length ? "Search lists…" : "No contact lists found in HubSpot";
       } catch (err) {
-        select.innerHTML = '<option value="">Could not load lists from HubSpot</option>';
-        addBtn.disabled = true;
+        hubspotLists = [];
+        searchInput.disabled = true;
+        searchInput.placeholder = "Could not load lists from HubSpot";
       }
     }
+
+    document.getElementById("list-search").addEventListener("focus", () => {
+      if (hubspotLists.length) renderListOptions(document.getElementById("list-search").value);
+    });
+    document.getElementById("list-search").addEventListener("input", () => {
+      selectedListId = "";
+      document.getElementById("add-mapping-btn").disabled = true;
+      renderListOptions(document.getElementById("list-search").value);
+    });
+    document.addEventListener("click", (e) => {
+      if (!document.querySelector(".token-picker").contains(e.target)) {
+        document.getElementById("list-dropdown").style.display = "none";
+      }
+    });
 
     function renderMappings(mappings) {
       const body = document.getElementById("mappings-body");
@@ -122,7 +171,7 @@
         await api("/api/hubspot/add_mapping", {
           method: "POST",
           body: {
-            list_id: document.getElementById("list-select").value,
+            list_id: selectedListId,
             sequence_id: document.getElementById("sequence-select").value,
           },
         });
