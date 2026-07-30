@@ -4,7 +4,7 @@ from _lib import models
 from _lib.auth import is_authenticated, require_auth
 from _lib.gmail import build_auth_url, exchange_code, get_user_email
 from _lib.redis_client import get_redis
-from _lib.utils import new_id, now_utc, today_str_local
+from _lib.utils import is_protected_domain, new_id, now_utc, today_str_local
 
 STATE_TTL_SECONDS = 600
 DEFAULT_DAILY_LIMIT = 50
@@ -48,6 +48,12 @@ def callback(self):
         email = get_user_email(access_token)
     except Exception:
         self._redirect("/accounts.html?error=oauth_failed")
+        return
+
+    if is_protected_domain(email):
+        # Never save tokens for a protected domain - not even long enough to
+        # check for an existing refresh_token below.
+        self._redirect("/accounts.html?error=protected_domain")
         return
 
     if not refresh_token:

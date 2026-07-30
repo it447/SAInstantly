@@ -8,7 +8,9 @@ Python/Vercel serverless functions + Upstash Redis + vanilla JS frontend.
 - Password-protected login. The typed password is sent as an `X-Auth-Token` header on every request and
   checked directly against `APP_PASSWORD` - no server-side session, cookies, or Redis storage involved. The
   frontend keeps it in `localStorage` after a successful login
-- Connect one or more Gmail accounts via OAuth, for inbox rotation
+- Connect one or more Gmail accounts via OAuth, for inbox rotation. Mailboxes on `PROTECTED_DOMAINS`
+  (defaults to `scalearmy.com`) are refused outright, so the primary domain can never be connected here and
+  mixed into cold-outreach sending — only dedicated cold-outreach domains should be connected
 - Multi-step sequence builder with merge tags and per-step delay. Merge tags use HubSpot's own contact
   property names (e.g. `{{firstname}}`, `{{company}}`) so the sequence editor's "Insert merge tag" picker
   can search your actual HubSpot contact properties (`GET /api/hubspot/properties`) and drop the right tag

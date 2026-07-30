@@ -14,6 +14,27 @@ except ImportError:  # pragma: no cover
 
 SEND_TZ_NAME = os.environ.get("SEND_TIMEZONE", "America/New_York")
 
+# Domains that must never be connected as a sending account in this tool
+# (e.g. the company's primary domain, kept separate from cold outreach to
+# protect its deliverability/reputation). Configurable via PROTECTED_DOMAINS
+# (comma-separated), with a hard-coded default so protection holds even if
+# that env var is never set.
+DEFAULT_PROTECTED_DOMAINS = ["scalearmy.com"]
+
+
+def protected_domains():
+    configured = os.environ.get("PROTECTED_DOMAINS", "")
+    domains = [d.strip().lower() for d in configured.split(",") if d.strip()]
+    return domains or DEFAULT_PROTECTED_DOMAINS
+
+
+def is_protected_domain(email):
+    email = (email or "").strip().lower()
+    if "@" not in email:
+        return False
+    domain = email.rsplit("@", 1)[1]
+    return any(domain == d or domain.endswith(f".{d}") for d in protected_domains())
+
 
 def send_tz():
     if ZoneInfo is None:
