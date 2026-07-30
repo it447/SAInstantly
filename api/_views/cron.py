@@ -8,9 +8,7 @@ from _lib.utils import now_local, render_merge_tags, send_window_hours, sequence
 BATCH_SIZE = 100
 
 
-def _sync_mapping(mapping):
-    cfg = models.get_hubspot_config()
-    api_key = cfg["api_key"]
+def _sync_mapping(mapping, api_key):
     list_id = mapping["list_id"]
     sequence_id = mapping["sequence_id"]
 
@@ -44,15 +42,16 @@ def hubspot_sync(self):
     if not require_cron_auth(self):
         return
 
+    api_key = hubspot_client.get_api_key()
     cfg = models.get_hubspot_config()
-    if not cfg.get("api_key") or not cfg.get("mappings"):
+    if not api_key or not cfg.get("mappings"):
         self._send_json(200, {"ok": True, "results": [], "note": "no HubSpot API key or list mappings configured"})
         return
 
     results = []
     for mapping in cfg["mappings"]:
         try:
-            results.append(_sync_mapping(mapping))
+            results.append(_sync_mapping(mapping, api_key))
         except Exception as exc:
             results.append({"list_id": mapping.get("list_id"), "error": str(exc)})
 

@@ -1,6 +1,16 @@
+import os
+
 import requests
 
 API_BASE = "https://api.hubapi.com"
+CONTACTS_OBJECT_TYPE_ID = "0-1"
+
+
+def get_api_key():
+    """The HubSpot private-app API key, configured only via the
+    HUBSPOT_API_KEY environment variable (Vercel project settings) -- never
+    entered through the UI or stored in Redis."""
+    return os.environ.get("HUBSPOT_API_KEY", "").strip()
 
 
 def _headers(api_key):
@@ -11,6 +21,29 @@ def get_list(api_key, list_id):
     resp = requests.get(f"{API_BASE}/crm/v3/lists/{list_id}", headers=_headers(api_key), timeout=15)
     resp.raise_for_status()
     return resp.json()
+
+
+def list_all_lists(api_key, count=200):
+    """Returns every contact list as [{id, name}], for populating the list picker."""
+    all_lists = []
+    offset = 0
+    while True:
+        resp = requests.post(
+            f"{API_BASE}/crm/v3/lists/search",
+            headers=_headers(api_key),
+            json={"objectTypeId": CONTACTS_OBJECT_TYPE_ID, "count": count, "offset": offset},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        for hs_list in data.get("lists", []):
+            list_id = hs_list.get("listId")
+            all_lists.append({"id": str(list_id), "name": hs_list.get("name") or f"List {list_id}"})
+        if not data.get("hasMore"):
+            break
+        offset += count
+    all_lists.sort(key=lambda l: l["name"].lower())
+    return all_lists
 
 
 def get_list_member_ids(api_key, list_id, after=None, count=100):

@@ -9,7 +9,7 @@ def config(self):
     self._send_json(
         200,
         {
-            "has_api_key": bool(cfg.get("api_key")),
+            "has_api_key": bool(hubspot_client.get_api_key()),
             "mappings": cfg.get("mappings", []),
         },
     )
@@ -18,32 +18,31 @@ def config(self):
 def properties(self):
     if not require_auth(self):
         return
-    cfg = models.get_hubspot_config()
-    if not cfg.get("api_key"):
-        self._send_json(400, {"error": "connect a HubSpot API key first"})
+    api_key = hubspot_client.get_api_key()
+    if not api_key:
+        self._send_json(400, {"error": "set the HUBSPOT_API_KEY environment variable in Vercel first"})
         return
     try:
-        props = hubspot_client.get_contact_properties(cfg["api_key"])
+        props = hubspot_client.get_contact_properties(api_key)
     except Exception:
         self._send_json(502, {"error": "could not load contact properties from HubSpot"})
         return
     self._send_json(200, {"properties": props})
 
 
-def save_key(self):
+def lists(self):
     if not require_auth(self):
         return
-
-    body = self._read_json_body()
-    api_key = (body.get("api_key") or "").strip()
+    api_key = hubspot_client.get_api_key()
     if not api_key:
-        self._send_json(400, {"error": "api_key is required"})
+        self._send_json(400, {"error": "set the HUBSPOT_API_KEY environment variable in Vercel first"})
         return
-
-    cfg = models.get_hubspot_config()
-    cfg["api_key"] = api_key
-    models.save_hubspot_config(cfg)
-    self._send_json(200, {"ok": True})
+    try:
+        hs_lists = hubspot_client.list_all_lists(api_key)
+    except Exception:
+        self._send_json(502, {"error": "could not load lists from HubSpot"})
+        return
+    self._send_json(200, {"lists": hs_lists})
 
 
 def add_mapping(self):
@@ -63,19 +62,20 @@ def add_mapping(self):
         self._send_json(404, {"error": "sequence not found"})
         return
 
-    cfg = models.get_hubspot_config()
-    if not cfg.get("api_key"):
-        self._send_json(400, {"error": "connect a HubSpot API key first"})
+    api_key = hubspot_client.get_api_key()
+    if not api_key:
+        self._send_json(400, {"error": "set the HUBSPOT_API_KEY environment variable in Vercel first"})
         return
 
     try:
-        hs_list = hubspot_client.get_list(cfg["api_key"], list_id)
+        hs_list = hubspot_client.get_list(api_key, list_id)
     except Exception:
         self._send_json(400, {"error": "could not find that HubSpot list with the configured API key"})
         return
 
     list_name = hs_list.get("list", {}).get("name") or hs_list.get("name") or f"List {list_id}"
 
+    cfg = models.get_hubspot_config()
     mappings = [m for m in cfg.get("mappings", []) if m["list_id"] != list_id]
     mappings.append(
         {

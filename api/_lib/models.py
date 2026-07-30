@@ -146,9 +146,13 @@ def record_unsubscribe_stat():
 # ------------------------------------------------------------------ hubspot
 
 def get_hubspot_config():
+    """Only holds list<->sequence mappings; the API key lives in the
+    HUBSPOT_API_KEY environment variable, not Redis."""
     r = get_redis()
     raw = r.get("hubspot:config")
-    return json.loads(raw) if raw else {"api_key": "", "mappings": []}
+    config = json.loads(raw) if raw else {"mappings": []}
+    config.pop("api_key", None)  # drop any key saved by an older version of this UI
+    return config
 
 
 def save_hubspot_config(config):
