@@ -66,8 +66,11 @@ public/            static vanilla JS/HTML/CSS frontend
 
 ### 1. Upstash Redis
 
-Create a database at [upstash.com](https://upstash.com), copy the REST URL and token into
-`UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`.
+Either create a database directly at [upstash.com](https://upstash.com) and copy the REST URL/token into
+`UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`, or connect Upstash through Vercel's Storage tab
+Marketplace integration. The Vercel integration injects the credentials under its legacy "KV" names instead
+(`KV_REST_API_URL` / `KV_REST_API_TOKEN`) - the code checks for either naming automatically, so no manual
+renaming is needed either way.
 
 ### 2. Google OAuth (Gmail)
 
