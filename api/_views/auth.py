@@ -9,7 +9,18 @@ def login(self):
     password = body.get("password", "")
 
     if not check_app_password(password):
-        self._send_json(401, {"error": "invalid password"})
+        # Temporary diagnostic (never the actual values): confirms what the
+        # server received vs. what it expects, without revealing either.
+        expected = os.environ.get("APP_PASSWORD") or ""
+        self._send_json(
+            401,
+            {
+                "error": "invalid password",
+                "received_length": len(password),
+                "expected_length": len(expected),
+                "received_matches_expected_after_strip": password.strip() == expected.strip(),
+            },
+        )
         return
 
     token = create_session()
