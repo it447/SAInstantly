@@ -5,9 +5,6 @@ from _lib import enrollment, gmail, hubspot_client, models
 from _lib.auth import require_cron_auth
 from _lib.utils import now_local, render_merge_tags, send_window_hours, sequence_merge_tag_properties, unsubscribe_link
 
-BATCH_SIZE = 100
-
-
 def _sync_mapping(mapping, api_key):
     list_id = mapping["list_id"]
     sequence_id = mapping["sequence_id"]
@@ -16,26 +13,18 @@ def _sync_mapping(mapping, api_key):
     if not sequence or sequence.get("archived") or sequence.get("status") != "active":
         return {"list_id": list_id, "skipped": "sequence not active"}
 
-    member_ids = hubspot_client.get_all_list_member_ids(api_key, list_id)
-    new_ids = [i for i in member_ids if not models.hubspot_contact_seen(list_id, i)]
     needed_properties = sequence_merge_tag_properties(sequence)
+    contacts = hubspot_client.get_list_contacts(api_key, list_id, properties=needed_properties)
+    new_contacts = [c for c in contacts if not models.hubspot_contact_seen(list_id, c["hubspot_id"])]
 
     enrolled = 0
-    for i in range(0, len(new_ids), BATCH_SIZE):
-        chunk = new_ids[i : i + BATCH_SIZE]
-        contacts = hubspot_client.batch_read_contacts(api_key, chunk, properties=needed_properties)
-        contacts_by_id = {c["hubspot_id"]: c for c in contacts}
+    for contact in new_contacts:
+        models.mark_hubspot_contact_seen(list_id, contact["hubspot_id"])
+        result = enrollment.enroll_contact(sequence_id, contact, source="hubspot")
+        if result:
+            enrolled += 1
 
-        for hubspot_id in chunk:
-            models.mark_hubspot_contact_seen(list_id, hubspot_id)
-            contact = contacts_by_id.get(hubspot_id)
-            if not contact:
-                continue
-            result = enrollment.enroll_contact(sequence_id, contact, source="hubspot")
-            if result:
-                enrolled += 1
-
-    return {"list_id": list_id, "checked": len(new_ids), "enrolled": enrolled}
+    return {"list_id": list_id, "checked": len(new_contacts), "enrolled": enrolled}
 
 
 def hubspot_sync(self):

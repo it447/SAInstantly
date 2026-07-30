@@ -1,14 +1,16 @@
+function authToken() {
+  return localStorage.getItem("auth_token") || "";
+}
+
 async function api(path, options) {
   const opts = Object.assign({ credentials: "same-origin" }, options || {});
+  opts.headers = Object.assign({ "X-Auth-Token": authToken() }, opts.headers || {});
   if (opts.body && typeof opts.body !== "string") {
     opts.body = JSON.stringify(opts.body);
-    opts.headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
+    opts.headers["Content-Type"] = "application/json";
   }
   const res = await fetch(path, opts);
-  // A 401 here means "your session is missing/expired" for most endpoints, so
-  // bounce to the login page - EXCEPT for the login endpoint's own failed
-  // attempts, which are also 401s but should just show an inline error.
-  if (res.status === 401 && !opts.skipAuthRedirect) {
+  if (res.status === 401) {
     window.location.href = "/login.html";
     throw new Error("unauthorized");
   }
@@ -39,8 +41,8 @@ function renderNav(active) {
       )
       .join("") +
     '<button id="logout-btn">Log out</button>';
-  document.getElementById("logout-btn").addEventListener("click", async () => {
-    await api("/api/auth/logout", { method: "POST" }).catch(() => {});
+  document.getElementById("logout-btn").addEventListener("click", () => {
+    localStorage.removeItem("auth_token");
     window.location.href = "/login.html";
   });
 }

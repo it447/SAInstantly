@@ -5,7 +5,9 @@ Python/Vercel serverless functions + Upstash Redis + vanilla JS frontend.
 
 ## Features
 
-- Password-protected login (session stored in Redis)
+- Password-protected login. The typed password is sent as an `X-Auth-Token` header on every request and
+  checked directly against `APP_PASSWORD` - no server-side session, cookies, or Redis storage involved. The
+  frontend keeps it in `localStorage` after a successful login
 - Connect one or more Gmail accounts via OAuth, for inbox rotation
 - Multi-step sequence builder with merge tags and per-step delay. Merge tags use HubSpot's own contact
   property names (e.g. `{{firstname}}`, `{{company}}`) so the sequence editor's "Insert merge tag" picker
@@ -33,7 +35,7 @@ api/
   [...path].py     single entrypoint; dispatches (method, path) -> view function
   _lib/            shared helpers (redis, auth, gmail, hubspot, scheduling, models)
   _views/
-    auth.py        login / logout / session status
+    auth.py        login (header test) / logout / auth status
     accounts.py    Gmail OAuth connect/callback + account management
     sequences.py   sequence CRUD + activity logs
     hubspot.py     API key + list-to-sequence mapping config
@@ -56,7 +58,6 @@ public/            static vanilla JS/HTML/CSS frontend
 | `active_enrollments` | set | emails with a currently-active enrollment, used by the reply-poll cron |
 | `hubspot:config` | string | json `{mappings: [{list_id, list_name, sequence_id, sequence_name}]}` — the API key is never stored here, only `HUBSPOT_API_KEY` |
 | `hubspot:seen:{list_id}` | set | HubSpot contact IDs already scanned for that list |
-| `sessions:{token}` | string | login session, TTL 7 days |
 | `oauth:state:{state}` | string | CSRF state for the Gmail OAuth flow, TTL 10 min |
 | `stats:sent:{date}` / `stats:sent:{account_id}:{date}` | string | daily send counters (global + per account) |
 | `stats:enrolled_total`, `stats:active_enrollments`, `stats:replies:{date}`, `stats:replies_total`, `stats:unsubscribes:{date}`, `stats:unsubscribes_total` | string | dashboard counters |
@@ -80,10 +81,15 @@ Create a database at [upstash.com](https://upstash.com), copy the REST URL and t
 
 ### 3. HubSpot
 
-Create a private app in HubSpot with `crm.objects.contacts.read` and `crm.lists.read` scopes, and set its
-access token as the `HUBSPOT_API_KEY` environment variable in Vercel. That's the only place it's configured —
-it's never entered through the UI or stored in Redis. The app's HubSpot page reads live contact properties and
-lists straight from HubSpot using this key, for the merge-tag picker and the list dropdown.
+Create a private app in HubSpot with the `contacts` scope, and set its access token as the `HUBSPOT_API_KEY`
+environment variable in Vercel. That's the only place it's configured — it's never entered through the UI or
+stored in Redis. The app's HubSpot page reads live contact properties and lists straight from HubSpot using
+this key, for the merge-tag picker and the list dropdown.
+
+List browsing and list membership use HubSpot's legacy v1 contacts API (`/contacts/v1/lists`), not the newer
+v3 CRM Lists API — v3 Lists can require scopes or plan tiers that aren't available on every HubSpot account,
+while v1 has been broadly available for years. The merge-tag property picker still uses the standard v3
+properties-schema endpoint, which is unrelated to the Lists API and unaffected by this.
 
 ### 4. Environment variables
 

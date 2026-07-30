@@ -15,7 +15,7 @@
     <div class="card section">
       <p class="muted">Connect the Gmail inboxes you want to send cold email from. Sending rotates across all
         connected accounts and stays under each account's daily limit.</p>
-      <a class="btn" href="/api/accounts/connect">+ Connect Gmail account</a>
+      <a class="btn" id="connect-gmail-link" href="#">+ Connect Gmail account</a>
     </div>
 
     <div class="card">
@@ -54,6 +54,11 @@
     async function load() {
       renderNav("/accounts.html");
       showBanner();
+      // A plain <a href> navigation can't carry the X-Auth-Token header, so
+      // the connect link passes the token as a query param instead - built
+      // here rather than as a static href.
+      document.getElementById("connect-gmail-link").href =
+        `/api/accounts/connect?token=${encodeURIComponent(authToken())}`;
       const { accounts } = await api("/api/accounts/list");
       const body = document.getElementById("accounts-body");
       body.innerHTML = "";
