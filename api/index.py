@@ -5,13 +5,16 @@ project (it errors out if it finds more than one file exporting a
 `handler`/`app`, and even a single file needs its module path declared in
 pyproject.toml's `[tool.vercel] entrypoint`), so every route is dispatched
 from here rather than from one file per endpoint. vercel.json rewrites all
-`/api/*` requests to this file; `self.path` still carries the real request
-path (e.g. `/api/sequences/save`), which is used below to pick the right
-view.
+`/api/*` requests to this file via a `:path*` wildcard; since the
+destination doesn't reference that wildcard inline, Vercel appends it as a
+`path` query parameter instead of preserving it in the URL path (e.g. a
+request for `/api/sequences/save` arrives here as `self.path ==
+"/api/index?path=sequences%2Fsave"`), so the real route is reconstructed
+from that query param below rather than from the URL path directly.
 """
 import sys
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -49,7 +52,13 @@ ROUTES = {
 
 class handler(BaseHandler):
     def _dispatch(self, method):
-        path = urlparse(self.path).path.rstrip("/") or "/"
+        parsed = urlparse(self.path)
+        wildcard = parse_qs(parsed.query).get("path", [None])[0]
+        if wildcard is not None:
+            path = f"/api/{wildcard}".rstrip("/") or "/"
+        else:
+            path = parsed.path.rstrip("/") or "/"
+
         view = ROUTES.get((method, path))
         if view is None:
             self._send_json(404, {"error": "not found", "method": method, "path": path, "raw_path": self.path})
