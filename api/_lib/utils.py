@@ -99,6 +99,20 @@ def render_merge_tags(text, contact):
     return MERGE_TAG_RE.sub(_sub, text)
 
 
+def merge_tags_in(text):
+    return set(MERGE_TAG_RE.findall(text or ""))
+
+
+def sequence_merge_tag_properties(sequence):
+    """Every {{property}} referenced across a sequence's steps, plus `email`
+    (always needed for dedup/sending/threading)."""
+    properties = {"email"}
+    for step in sequence.get("steps", []):
+        properties |= merge_tags_in(step.get("subject", ""))
+        properties |= merge_tags_in(step.get("body", ""))
+    return properties
+
+
 def unsubscribe_token(email, sequence_id):
     secret = os.environ.get("UNSUBSCRIBE_SECRET", "").encode("utf-8")
     payload = f"{email}:{sequence_id}".encode("utf-8")

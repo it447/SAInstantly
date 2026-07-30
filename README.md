@@ -7,7 +7,11 @@ Python/Vercel serverless functions + Upstash Redis + vanilla JS frontend.
 
 - Password-protected login (session stored in Redis)
 - Connect one or more Gmail accounts via OAuth, for inbox rotation
-- Multi-step sequence builder with merge tags (`{{first_name}}`, `{{last_name}}`, `{{company}}`, `{{email}}`) and per-step delay
+- Multi-step sequence builder with merge tags and per-step delay. Merge tags use HubSpot's own contact
+  property names (e.g. `{{firstname}}`, `{{company}}`) so the sequence editor's "Insert merge tag" picker
+  can search your actual HubSpot contact properties (`GET /api/hubspot/properties`) and drop the right tag
+  in with a click — no HubSpot key connected yet just falls back to a small default set
+  (`email`, `firstname`, `lastname`, `company`)
 - HubSpot list → sequence connection: new list members are auto-enrolled (deduped so a contact is never enrolled twice in the same sequence)
 - Scheduled sending (cron every 15 min) that spreads emails between 8am–6pm ET, respects a global daily cap (default 500) and per-account daily limits
 - Reply detection (cron every 30 min) that stops a contact's sequence automatically
@@ -50,7 +54,7 @@ public/            static vanilla JS/HTML/CSS frontend
 | `logs:{sequence_id}` | list | activity log entries (enrolled / sent / replied / unsubscribed / completed / errors), newest first, capped at 1000 |
 | `queue:pending` | zset | `{sequence_id}\|{email} -> next_send_at unix ts`, drives the send cron |
 | `active_enrollments` | set | emails with a currently-active enrollment, used by the reply-poll cron |
-| `hubspot:config` | string | json `{api_key, mappings: [{list_id, list_name, sequence_id, sequence_name}]}` |
+| `hubspot:config` | string | json `{mappings: [{list_id, list_name, sequence_id, sequence_name}]}` — the API key is never stored here, only `HUBSPOT_API_KEY` |
 | `hubspot:seen:{list_id}` | set | HubSpot contact IDs already scanned for that list |
 | `sessions:{token}` | string | login session, TTL 7 days |
 | `oauth:state:{state}` | string | CSRF state for the Gmail OAuth flow, TTL 10 min |
@@ -76,9 +80,10 @@ Create a database at [upstash.com](https://upstash.com), copy the REST URL and t
 
 ### 3. HubSpot
 
-Create a private app in HubSpot with `crm.objects.contacts.read` and `crm.lists.read` scopes,
-paste the access token into the app's HubSpot page (stored in Redis, or set
-`HUBSPOT_API_KEY` as a fallback default).
+Create a private app in HubSpot with `crm.objects.contacts.read` and `crm.lists.read` scopes, and set its
+access token as the `HUBSPOT_API_KEY` environment variable in Vercel. That's the only place it's configured —
+it's never entered through the UI or stored in Redis. The app's HubSpot page reads live contact properties and
+lists straight from HubSpot using this key, for the merge-tag picker and the list dropdown.
 
 ### 4. Environment variables
 

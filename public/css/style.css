@@ -102,6 +102,18 @@ label { font-size: 0.85rem; color: var(--muted); display: block; margin-bottom: 
 .row { display: flex; gap: 1rem; }
 .row > * { flex: 1; }
 
+.token-picker { position: relative; display: inline-block; }
+.token-dropdown {
+  position: absolute; z-index: 20; top: 100%; left: 0; margin-top: 0.35rem;
+  width: 280px; max-height: 280px; overflow-y: auto;
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.15); padding: 0.5rem;
+}
+.token-dropdown input { margin-bottom: 0.5rem; }
+.token-item { padding: 0.4rem 0.5rem; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+.token-item:hover { background: var(--bg); }
+.token-item .name { color: var(--muted); font-size: 0.75rem; margin-top: 0.1rem; }
+
 .muted { color: var(--muted); }
 .error { color: var(--danger); font-size: 0.88rem; margin-top: 0.5rem; }
 .success { color: var(--success); font-size: 0.88rem; margin-top: 0.5rem; }

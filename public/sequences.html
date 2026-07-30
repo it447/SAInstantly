@@ -35,8 +35,8 @@
         </div>
 
         <div class="muted" style="font-size:0.85rem; margin-bottom:1rem">
-          Merge tags available in subject/body: <code>{{first_name}}</code> <code>{{last_name}}</code>
-          <code>{{company}}</code> <code>{{email}}</code>. An unsubscribe link is appended to every email automatically.
+          Click <strong>Insert merge tag</strong> on a step to search your HubSpot contact properties and drop one
+          into whichever field you last clicked. An unsubscribe link is appended to every email automatically.
         </div>
 
         <div id="steps"></div>
@@ -74,7 +74,14 @@
       </div>
       <div class="field">
         <label>Body</label>
-        <textarea class="step-body" placeholder="Hi {{first_name}},\n\n..."></textarea>
+        <textarea class="step-body" placeholder="Hi {{firstname}},&#10;&#10;..."></textarea>
+      </div>
+      <div class="token-picker">
+        <button type="button" class="btn secondary token-btn">+ Insert merge tag</button>
+        <div class="token-dropdown" style="display:none">
+          <input type="text" class="token-search" placeholder="Search contact properties…">
+          <div class="token-list"></div>
+        </div>
       </div>
     </div>
   </template>
@@ -83,6 +90,84 @@
   <script>
     let sequences = [];
     let currentId = null;
+
+    // Small fallback list so the picker still works before a HubSpot API key is connected.
+    let hubspotProperties = [
+      { name: "email", label: "Email" },
+      { name: "firstname", label: "First Name" },
+      { name: "lastname", label: "Last Name" },
+      { name: "company", label: "Company" },
+    ];
+
+    async function loadHubspotProperties() {
+      try {
+        const { properties } = await api("/api/hubspot/properties");
+        if (properties && properties.length) hubspotProperties = properties;
+      } catch (err) {
+        // Not connected yet (or the lookup failed) — keep the small default list.
+      }
+    }
+
+    function insertAtCursor(field, text) {
+      const start = field.selectionStart ?? field.value.length;
+      const end = field.selectionEnd ?? field.value.length;
+      field.value = field.value.slice(0, start) + text + field.value.slice(end);
+      const pos = start + text.length;
+      field.focus();
+      field.setSelectionRange(pos, pos);
+    }
+
+    function wireTokenPicker(card, subjectInput, bodyInput) {
+      let lastFocused = subjectInput;
+      subjectInput.addEventListener("focus", () => (lastFocused = subjectInput));
+      bodyInput.addEventListener("focus", () => (lastFocused = bodyInput));
+
+      const tokenBtn = card.querySelector(".token-btn");
+      const tokenDropdown = card.querySelector(".token-dropdown");
+      const tokenSearch = card.querySelector(".token-search");
+      const tokenList = card.querySelector(".token-list");
+
+      function renderTokenList(filter) {
+        const f = (filter || "").toLowerCase();
+        const items = hubspotProperties.filter(
+          (p) => p.name.toLowerCase().includes(f) || p.label.toLowerCase().includes(f)
+        );
+        tokenList.innerHTML = items.length
+          ? items
+              .map(
+                (p) =>
+                  `<div class="token-item" data-name="${escapeHtml(p.name)}">${escapeHtml(p.label)}<div class="name">{{${escapeHtml(p.name)}}}</div></div>`
+              )
+              .join("")
+          : '<div class="muted" style="padding:0.4rem 0.5rem">No matches</div>';
+        tokenList.querySelectorAll(".token-item").forEach((item) => {
+          item.addEventListener("click", () => {
+            insertAtCursor(lastFocused, `{{${item.dataset.name}}}`);
+            tokenDropdown.style.display = "none";
+          });
+        });
+      }
+
+      tokenBtn.addEventListener("click", () => {
+        const isOpen = tokenDropdown.style.display !== "none";
+        document.querySelectorAll(".token-dropdown").forEach((d) => (d.style.display = "none"));
+        if (!isOpen) {
+          tokenDropdown.style.display = "block";
+          tokenSearch.value = "";
+          renderTokenList("");
+          tokenSearch.focus();
+        }
+      });
+      tokenSearch.addEventListener("input", () => renderTokenList(tokenSearch.value));
+    }
+
+    document.addEventListener("click", (e) => {
+      document.querySelectorAll(".token-picker").forEach((picker) => {
+        if (!picker.contains(e.target)) {
+          picker.querySelector(".token-dropdown").style.display = "none";
+        }
+      });
+    });
 
     function addStepRow(step) {
       const tpl = document.getElementById("step-template");
@@ -94,6 +179,7 @@
         card.querySelector(".step-body").value = step.body;
       }
       card.querySelector(".step-remove").addEventListener("click", () => card.remove());
+      wireTokenPicker(card, card.querySelector(".step-subject"), card.querySelector(".step-body"));
       document.getElementById("steps").appendChild(node);
     }
 
@@ -217,7 +303,7 @@
 
     async function init() {
       renderNav("/sequences.html");
-      await refreshSequences();
+      await Promise.all([refreshSequences(), loadHubspotProperties()]);
       const params = new URLSearchParams(window.location.search);
       const id = params.get("id");
       const seq = id && sequences.find((s) => s.id === id);

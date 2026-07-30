@@ -13,16 +13,9 @@
 
     <div class="card section">
       <h2>API key</h2>
-      <p class="muted">Uses a HubSpot private app API key with CRM contacts + lists read access.</p>
-      <div class="row" style="align-items:flex-end">
-        <div class="field" style="margin-bottom:0">
-          <label for="api-key">API key</label>
-          <input id="api-key" type="password" placeholder="pat-na1-...">
-        </div>
-        <button class="btn" id="save-key-btn" style="flex:0">Save</button>
-      </div>
-      <div id="key-status" class="muted" style="margin-top:0.5rem; font-size:0.85rem"></div>
-      <div class="error" id="key-error" style="display:none"></div>
+      <p class="muted">Configured via the <code>HUBSPOT_API_KEY</code> environment variable in your Vercel project
+        settings (a private app key with CRM contacts + lists read access) — it's never entered or stored here.</p>
+      <div id="key-status" class="muted" style="font-size:0.85rem"></div>
     </div>
 
     <div class="card section">
@@ -31,8 +24,8 @@
         (each contact is enrolled at most once per sequence).</p>
       <div class="row">
         <div class="field">
-          <label for="list-id">HubSpot list ID</label>
-          <input id="list-id" placeholder="e.g. 42">
+          <label for="list-select">HubSpot list</label>
+          <select id="list-select"></select>
         </div>
         <div class="field">
           <label for="sequence-select">Sequence</label>
@@ -55,6 +48,8 @@
 
   <script src="/js/api.js"></script>
   <script>
+    let apiKeyConfigured = false;
+
     async function loadSequenceOptions() {
       const { sequences } = await api("/api/sequences/list");
       const select = document.getElementById("sequence-select");
@@ -63,6 +58,26 @@
         .join("");
       if (sequences.length === 0) {
         select.innerHTML = '<option value="">Create a sequence first</option>';
+      }
+    }
+
+    async function loadListOptions() {
+      const select = document.getElementById("list-select");
+      const addBtn = document.getElementById("add-mapping-btn");
+      if (!apiKeyConfigured) {
+        select.innerHTML = '<option value="">Set HUBSPOT_API_KEY in Vercel first</option>';
+        addBtn.disabled = true;
+        return;
+      }
+      try {
+        const { lists } = await api("/api/hubspot/lists");
+        addBtn.disabled = false;
+        select.innerHTML = lists.length
+          ? lists.map((l) => `<option value="${l.id}">${escapeHtml(l.name)}</option>`).join("")
+          : '<option value="">No contact lists found in HubSpot</option>';
+      } catch (err) {
+        select.innerHTML = '<option value="">Could not load lists from HubSpot</option>';
+        addBtn.disabled = true;
       }
     }
 
@@ -92,24 +107,13 @@
 
     async function loadConfig() {
       const config = await api("/api/hubspot/config");
-      document.getElementById("key-status").textContent = config.has_api_key
-        ? "API key is set."
-        : "No API key saved yet.";
+      apiKeyConfigured = config.has_api_key;
+      document.getElementById("key-status").textContent = apiKeyConfigured
+        ? "HUBSPOT_API_KEY is set."
+        : "HUBSPOT_API_KEY is not set yet — add it in Vercel project settings, then redeploy.";
       renderMappings(config.mappings);
+      await loadListOptions();
     }
-
-    document.getElementById("save-key-btn").addEventListener("click", async () => {
-      const errorEl = document.getElementById("key-error");
-      errorEl.style.display = "none";
-      try {
-        await api("/api/hubspot/save_key", { method: "POST", body: { api_key: document.getElementById("api-key").value } });
-        document.getElementById("api-key").value = "";
-        loadConfig();
-      } catch (err) {
-        errorEl.textContent = err.message;
-        errorEl.style.display = "block";
-      }
-    });
 
     document.getElementById("add-mapping-btn").addEventListener("click", async () => {
       const errorEl = document.getElementById("mapping-error");
@@ -118,11 +122,10 @@
         await api("/api/hubspot/add_mapping", {
           method: "POST",
           body: {
-            list_id: document.getElementById("list-id").value,
+            list_id: document.getElementById("list-select").value,
             sequence_id: document.getElementById("sequence-select").value,
           },
         });
-        document.getElementById("list-id").value = "";
         loadConfig();
       } catch (err) {
         errorEl.textContent = err.message;

@@ -28,10 +28,17 @@
       errorEl.style.display = "none";
       const password = document.getElementById("password").value;
       try {
-        await api("/api/auth/login", { method: "POST", body: { password } });
+        await api("/api/auth/login", { method: "POST", body: { password }, skipAuthRedirect: true });
         window.location.href = "/index.html";
       } catch (err) {
-        errorEl.textContent = "Incorrect password.";
+        // TEMPORARY: surface the diagnostic fields from the server so we can
+        // pin down why login is failing, without ever showing the actual
+        // password values.
+        const d = err.data || {};
+        errorEl.textContent =
+          "received_length" in d
+            ? `Incorrect password. (received_length=${d.received_length}, expected_length=${d.expected_length}, matches_after_strip=${d.received_matches_expected_after_strip})`
+            : "Incorrect password.";
         errorEl.style.display = "block";
       }
     });

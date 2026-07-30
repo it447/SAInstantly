@@ -5,13 +5,18 @@ async function api(path, options) {
     opts.headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
   }
   const res = await fetch(path, opts);
-  if (res.status === 401) {
+  // A 401 here means "your session is missing/expired" for most endpoints, so
+  // bounce to the login page - EXCEPT for the login endpoint's own failed
+  // attempts, which are also 401s but should just show an inline error.
+  if (res.status === 401 && !opts.skipAuthRedirect) {
     window.location.href = "/login.html";
     throw new Error("unauthorized");
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(data.error || `request failed (${res.status})`);
+    const error = new Error(data.error || `request failed (${res.status})`);
+    error.data = data;
+    throw error;
   }
   return data;
 }
