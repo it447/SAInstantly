@@ -1,3 +1,5 @@
+import os
+
 from _lib.auth import check_app_password, create_session, destroy_session, is_authenticated
 from _lib.http import SESSION_COOKIE_NAME
 
@@ -24,3 +26,18 @@ def logout(self):
 
 def status(self):
     self._send_json(200, {"authenticated": is_authenticated(self)})
+
+
+def debug_password_config(self):
+    """Temporary diagnostic: reveals whether APP_PASSWORD is configured and
+    a couple of common copy-paste footguns, without ever exposing the
+    actual value. Safe to remove once login issues are resolved."""
+    raw = os.environ.get("APP_PASSWORD")
+    self._send_json(
+        200,
+        {
+            "is_set": raw is not None,
+            "length": len(raw) if raw is not None else 0,
+            "has_leading_or_trailing_whitespace": bool(raw) and raw != raw.strip(),
+        },
+    )

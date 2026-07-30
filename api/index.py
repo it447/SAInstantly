@@ -23,6 +23,7 @@ from _views import accounts, auth, cron, dashboard, hubspot, sequences, unsubscr
 
 ROUTES = {
     ("GET", "/api/auth/status"): auth.status,
+    ("GET", "/api/auth/debug_password_config"): auth.debug_password_config,
     ("POST", "/api/auth/login"): auth.login,
     ("POST", "/api/auth/logout"): auth.logout,
     ("GET", "/api/accounts/connect"): accounts.connect,
