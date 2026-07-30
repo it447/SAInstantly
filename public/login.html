@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Log in — Cold Email Sequencer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="card login-card">
+      <h1>Cold Email Sequencer</h1>
+      <form id="login-form">
+        <div class="field">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" autofocus required>
+        </div>
+        <button class="btn" type="submit" style="width:100%">Log in</button>
+        <div class="error" id="error" style="display:none"></div>
+      </form>
+    </div>
+  </div>
+  <script src="/js/api.js"></script>
+  <script>
+    document.getElementById("login-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const errorEl = document.getElementById("error");
+      errorEl.style.display = "none";
+      const password = document.getElementById("password").value;
+      try {
+        await api("/api/auth/login", { method: "POST", body: { password } });
+        window.location.href = "/index.html";
+      } catch (err) {
+        errorEl.textContent = "Incorrect password.";
+        errorEl.style.display = "block";
+      }
+    });
+  </script>
+</body>
+</html>

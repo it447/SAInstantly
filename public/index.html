@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dashboard — Cold Email Sequencer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav class="nav" id="nav"></nav>
+  <div class="container">
+    <h1>Dashboard</h1>
+
+    <div class="grid stats" id="stats"></div>
+
+    <div class="section card">
+      <h2>Sequences</h2>
+      <table id="sequences-table">
+        <thead>
+          <tr><th>Name</th><th>Status</th><th>Steps</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <div class="empty" id="sequences-empty" style="display:none">No sequences yet. <a href="/sequences.html">Create one</a>.</div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    function statTile(value, label) {
+      return `<div class="card stat-tile"><div class="value">${value}</div><div class="label">${label}</div></div>`;
+    }
+
+    async function load() {
+      renderNav("/index.html");
+      const stats = await api("/api/dashboard/stats");
+
+      document.getElementById("stats").innerHTML = [
+        statTile(stats.active_sequences, "Active sequences"),
+        statTile(stats.active_enrollments, "Contacts currently enrolled"),
+        statTile(`${stats.emails_sent_today} / ${stats.daily_cap}`, "Emails sent today"),
+        statTile(stats.replies_today, "Replies today"),
+        statTile(stats.unsubscribes_today, "Unsubscribes today"),
+        statTile(stats.connected_accounts, "Connected accounts"),
+      ].join("");
+
+      const tbody = document.querySelector("#sequences-table tbody");
+      tbody.innerHTML = "";
+      if (stats.sequences.length === 0) {
+        document.getElementById("sequences-empty").style.display = "block";
+      } else {
+        stats.sequences.forEach((s) => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td><a href="/sequences.html?id=${encodeURIComponent(s.id)}">${escapeHtml(s.name)}</a></td>
+            <td><span class="badge ${s.status}">${escapeHtml(s.status)}</span></td>
+            <td>${s.steps}</td>`;
+          tbody.appendChild(tr);
+        });
+      }
+    }
+
+    load().catch((err) => {
+      if (err.message !== "unauthorized") console.error(err);
+    });
+  </script>
+</body>
+</html>

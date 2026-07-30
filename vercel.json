@@ -1,0 +1,17 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/**/*.py": {
+      "maxDuration": 60
+    }
+  },
+  "crons": [
+    { "path": "/api/cron/send", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/poll_replies", "schedule": "*/30 * * * *" },
+    { "path": "/api/cron/hubspot_sync", "schedule": "*/15 * * * *" }
+  ],
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api/index" },
+    { "source": "/((?!api/).*)", "destination": "/public/$1" }
+  ]
+}

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Accounts — Cold Email Sequencer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav class="nav" id="nav"></nav>
+  <div class="container">
+    <h1>Connected accounts</h1>
+    <div id="banner"></div>
+
+    <div class="card section">
+      <p class="muted">Connect the Gmail inboxes you want to send cold email from. Sending rotates across all
+        connected accounts and stays under each account's daily limit.</p>
+      <a class="btn" href="/api/accounts/connect">+ Connect Gmail account</a>
+    </div>
+
+    <div class="card">
+      <h2>Accounts</h2>
+      <table>
+        <thead>
+          <tr><th>Email</th><th>Status</th><th>Sent today</th><th>Daily limit</th><th></th></tr>
+        </thead>
+        <tbody id="accounts-body"></tbody>
+      </table>
+      <div class="empty" id="accounts-empty" style="display:none">No accounts connected yet.</div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    const ERROR_MESSAGES = {
+      missing_code: "Google did not return an authorization code.",
+      invalid_state: "That connection link expired. Please try again.",
+      oauth_failed: "Could not complete Google sign-in. Please try again.",
+      no_refresh_token: "Google didn't grant offline access. Remove this app from your Google account's " +
+        "third-party access settings, then try connecting again.",
+    };
+
+    function showBanner() {
+      const params = new URLSearchParams(window.location.search);
+      const banner = document.getElementById("banner");
+      if (params.get("connected")) {
+        banner.innerHTML = '<div class="success card" style="margin-bottom:1rem">Account connected.</div>';
+      } else if (params.get("error")) {
+        const msg = ERROR_MESSAGES[params.get("error")] || "Something went wrong connecting that account.";
+        banner.innerHTML = `<div class="error card" style="margin-bottom:1rem">${escapeHtml(msg)}</div>`;
+      }
+    }
+
+    async function load() {
+      renderNav("/accounts.html");
+      showBanner();
+      const { accounts } = await api("/api/accounts/list");
+      const body = document.getElementById("accounts-body");
+      body.innerHTML = "";
+      if (accounts.length === 0) {
+        document.getElementById("accounts-empty").style.display = "block";
+        return;
+      }
+      accounts.forEach((a) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${escapeHtml(a.email)}</td>
+          <td><span class="badge ${a.status}">${escapeHtml(a.status)}</span></td>
+          <td>${a.sent_today}</td>
+          <td><input type="number" min="0" value="${a.daily_limit}" data-id="${a.id}" class="limit-input" style="width:90px"></td>
+          <td><button class="btn secondary disconnect-btn" data-id="${a.id}" ${a.status !== "connected" ? "disabled" : ""}>Disconnect</button></td>`;
+        body.appendChild(tr);
+      });
+
+      document.querySelectorAll(".limit-input").forEach((input) => {
+        input.addEventListener("change", async () => {
+          await api("/api/accounts/update", {
+            method: "POST",
+            body: { id: input.dataset.id, daily_limit: Number(input.value) },
+          });
+        });
+      });
+
+      document.querySelectorAll(".disconnect-btn").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          if (!confirm("Disconnect this account? It will stop sending immediately.")) return;
+          await api("/api/accounts/disconnect", { method: "POST", body: { id: btn.dataset.id } });
+          load();
+        });
+      });
+    }
+
+    load().catch((err) => {
+      if (err.message !== "unauthorized") console.error(err);
+    });
+  </script>
+</body>
+</html>
