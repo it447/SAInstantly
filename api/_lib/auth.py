@@ -19,6 +19,15 @@ def destroy_session(token):
 
 
 def is_authenticated(handler):
+    # TEMPORARY escape hatch while the login bug is being tracked down: set
+    # DISABLE_AUTH=true in Vercel env vars to skip the password/session check
+    # entirely so the rest of the app can be tested. This removes ALL access
+    # control - anyone with the URL can use every feature (send real emails,
+    # read HubSpot data, etc). Only use this on a deployment nobody else can
+    # reach yet, and unset it (redeploy) before any real use.
+    if os.environ.get("DISABLE_AUTH", "").strip().lower() == "true":
+        return True
+
     cookies = handler._cookies()
     token = cookies.get(SESSION_COOKIE_NAME)
     if not token:
