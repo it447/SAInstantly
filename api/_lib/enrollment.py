@@ -157,11 +157,19 @@ def daily_cap():
     return int(os.environ.get("DAILY_SEND_CAP", "500"))
 
 
-def pick_account(accounts, remaining_by_account):
-    """Pick the connected account with the most remaining daily capacity."""
+def pick_account(accounts, remaining_by_account, allowed_account_ids=None):
+    """Pick the connected account with the most remaining daily capacity.
+    If allowed_account_ids is a non-empty list, only those accounts are
+    considered (a sequence scoped to specific senders); otherwise every
+    connected account is a candidate."""
+    candidates = accounts
+    if allowed_account_ids:
+        allowed = set(allowed_account_ids)
+        candidates = [a for a in accounts if a["id"] in allowed]
+
     best = None
     best_remaining = -1
-    for acc in accounts:
+    for acc in candidates:
         if acc.get("status") != "connected":
             continue
         remaining = remaining_by_account.get(acc["id"], 0)

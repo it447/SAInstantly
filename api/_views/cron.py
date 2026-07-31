@@ -106,9 +106,14 @@ def _run_send():
             enrollment.advance_or_complete(enr, sequence)
             continue
 
-        account = enrollment.pick_account(accounts, remaining_by_account)
+        account = enrollment.pick_account(accounts, remaining_by_account, sequence.get("account_ids"))
         if not account:
-            break
+            # Don't break the whole tick over one sequence's accounts being
+            # out of capacity - a sequence scoped to specific senders can be
+            # exhausted while other accounts still have room for other
+            # sequences' due sends. This item stays queued and gets retried
+            # on a later tick.
+            continue
 
         step = steps[step_index]
         contact = enr["contact"]

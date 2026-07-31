@@ -22,6 +22,10 @@ def _validate(body):
         except (TypeError, ValueError):
             return f"step {i + 1}: delay_days must be a number"
 
+    account_ids = body.get("account_ids")
+    if account_ids is not None and not isinstance(account_ids, list):
+        return "account_ids must be a list"
+
     return None
 
 
@@ -55,12 +59,19 @@ def save(self):
     sequence_id = body.get("id")
     existing = models.get_sequence(sequence_id) if sequence_id else None
 
+    account_ids = body.get("account_ids")
+    if account_ids is None:
+        account_ids = existing.get("account_ids", []) if existing else []
+
     sequence = {
         "id": existing["id"] if existing else new_id("seq_"),
         "name": body["name"].strip(),
         "status": body.get("status", existing.get("status", "active") if existing else "active"),
         "archived": False,
         "steps": steps,
+        # Which connected accounts this sequence is allowed to send from -
+        # empty means "any connected account" (today's default rotation).
+        "account_ids": [str(a) for a in account_ids],
         "created_at": existing.get("created_at") if existing else now_utc().isoformat(),
         "updated_at": now_utc().isoformat(),
     }
@@ -146,6 +157,13 @@ def detail(self):
     contacts.sort(key=lambda e: e.get("enrolled_at") or "", reverse=True)
     stats["sent"] = models.get_stat(f"stats:sequence:{sequence_id}:sent") or 0
 
+    account_ids = sequence.get("account_ids") or []
+    if account_ids:
+        accounts_by_id = {a["id"]: a for a in models.list_accounts()}
+        sending_accounts = [accounts_by_id[a_id]["email"] for a_id in account_ids if a_id in accounts_by_id]
+    else:
+        sending_accounts = []
+
     self._send_json(
         200,
         {
@@ -154,6 +172,7 @@ def detail(self):
                 "name": sequence["name"],
                 "status": sequence.get("status"),
                 "steps": len(sequence.get("steps", [])),
+                "sending_accounts": sending_accounts,
             },
             "stats": stats,
             "contacts": contacts,

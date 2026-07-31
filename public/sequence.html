@@ -20,6 +20,7 @@
       </div>
     </div>
     <div class="orange-bar"></div>
+    <div class="muted" id="sending-accounts" style="font-size:0.85rem; margin-bottom:1rem"></div>
 
     <div class="grid stats" id="stats"></div>
 
@@ -61,6 +62,10 @@
       statusBadge.textContent = sequence.status;
       statusBadge.className = `badge ${sequence.status}`;
       statusBadge.style.display = "inline-block";
+
+      document.getElementById("sending-accounts").textContent = sequence.sending_accounts.length
+        ? `Sending from: ${sequence.sending_accounts.join(", ")}`
+        : "Sending from: any connected account";
 
       document.getElementById("stats").innerHTML = [
         statTile(stats.total, "Total enrolled"),

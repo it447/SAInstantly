@@ -130,7 +130,9 @@ scheduler (e.g. cron-job.org) with the `Authorization: Bearer $CRON_SECRET` head
   batch enrollment (e.g. a big HubSpot list import) trickles out over many ticks instead
   of bursting.
 - Account selection picks whichever connected account has the most daily capacity left
-  (`daily_limit - stats:sent:{account_id}:{date}`), rotating sends across accounts.
+  (`daily_limit - stats:sent:{account_id}:{date}`), rotating sends across accounts. Each sequence can
+  optionally be scoped to specific connected accounts (a checklist in the sequence editor) - leaving none
+  checked keeps the default of rotating across every connected account.
 - The global `DAILY_SEND_CAP` (default 500) is checked before any sends happen in a tick.
 
 ## Local development
