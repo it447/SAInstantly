@@ -5,7 +5,7 @@ import os
 
 from . import models
 from .redis_client import get_redis
-from .utils import new_id, next_send_time, now_utc
+from .utils import new_id, next_send_time, next_send_time_soon, now_utc
 
 QUEUE_KEY = "queue:pending"
 ACTIVE_SET_KEY = "active_enrollments"
@@ -33,7 +33,10 @@ def enroll_contact(sequence_id, contact, source="hubspot"):
         # sequence; don't double-enroll them concurrently.
         return None
 
-    send_at = next_send_time(after_days=0)
+    # The first email in a sequence should land soon after enrollment (not at
+    # a random point later in the day) - later steps still use the broader
+    # per-day spread via next_send_time, see advance_or_complete below.
+    send_at = next_send_time_soon()
     enrollment = {
         "id": new_id("enr_"),
         "email": email,
@@ -55,6 +58,7 @@ def enroll_contact(sequence_id, contact, source="hubspot"):
     }
     models.save_enrollment(enrollment)
     models.mark_enrolled_dedup(email, sequence_id)
+    models.add_sequence_contact(sequence_id, email)
     models.incr_stat("stats:enrolled_total")
     models.incr_stat("stats:active_enrollments")
 

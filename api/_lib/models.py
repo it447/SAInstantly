@@ -91,6 +91,25 @@ def mark_enrolled_dedup(email, sequence_id):
     r.set(f"sent:{email.strip().lower()}:{sequence_id}", "1")
 
 
+def sequence_contacts_key(sequence_id):
+    return f"sequence_contacts:{sequence_id}"
+
+
+def add_sequence_contact(sequence_id, email):
+    """Indexes which emails have ever been enrolled in this sequence, so the
+    per-sequence contacts view can list them even after they've completed,
+    replied, or unsubscribed (the enrollment record itself is keyed by email
+    only, so this is the only way to look them up by sequence)."""
+    r = get_redis()
+    r.sadd(sequence_contacts_key(sequence_id), email.strip().lower())
+
+
+def list_enrollments_for_sequence(sequence_id):
+    r = get_redis()
+    emails = r.smembers(sequence_contacts_key(sequence_id)) or []
+    return [e for e in (get_enrollment(email) for email in emails) if e]
+
+
 # --------------------------------------------------------------------- logs
 
 def append_log(sequence_id, entry):

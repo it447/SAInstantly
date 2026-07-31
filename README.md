@@ -17,7 +17,11 @@ Python/Vercel serverless functions + Upstash Redis + vanilla JS frontend.
   in with a click — no HubSpot key connected yet just falls back to a small default set
   (`email`, `firstname`, `lastname`, `company`)
 - HubSpot list → sequence connection: new list members are auto-enrolled (deduped so a contact is never enrolled twice in the same sequence)
-- Scheduled sending (cron every 15 min) that spreads emails between 8am–6pm ET, respects a global daily cap (default 500) and per-account daily limits
+- Scheduled sending (cron every 15 min): a contact's first email in a sequence goes out within a few minutes
+  of enrollment (so leads hear back within ~30 minutes), later steps spread across the 8am–6pm ET window;
+  respects a global daily cap (default 500) and per-account daily limits
+- Per-sequence contacts view (click a sequence from the dashboard or sequence list) showing every enrolled
+  contact's status and next scheduled send time
 - Reply detection (cron every 30 min) that stops a contact's sequence automatically
 - One-click unsubscribe link on every email that stops the sequence permanently
 - Dashboard with active sequences, contacts enrolled, emails sent today, replies, unsubscribes

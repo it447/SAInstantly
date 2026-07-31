@@ -91,3 +91,37 @@ def logs(self):
         return
     entries = models.get_logs(sequence_id, limit=200)
     self._send_json(200, {"logs": entries})
+
+
+def enrollments(self):
+    if not require_auth(self):
+        return
+    query = self._query()
+    sequence_id = query.get("id", [None])[0]
+    if not sequence_id:
+        self._send_json(400, {"error": "id is required"})
+        return
+
+    records = models.list_enrollments_for_sequence(sequence_id)
+    out = []
+    for e in records:
+        contact = e.get("contact") or {}
+        properties = contact.get("properties") or {}
+        # An enrollment record only tracks a contact's current sequence, so a
+        # contact who has since moved on to a different one shows up here
+        # with whatever status they were left at, not this sequence's steps.
+        in_this_sequence = e.get("sequence_id") == sequence_id
+        out.append(
+            {
+                "email": e["email"],
+                "firstname": properties.get("firstname"),
+                "lastname": properties.get("lastname"),
+                "status": e.get("status") if in_this_sequence else "moved_to_other_sequence",
+                "step_index": e.get("step_index", 0) if in_this_sequence else None,
+                "next_send_at": e.get("next_send_at") if in_this_sequence and e.get("status") == "active" else None,
+                "enrolled_at": e.get("enrolled_at"),
+                "updated_at": e.get("updated_at"),
+            }
+        )
+    out.sort(key=lambda e: e.get("enrolled_at") or "", reverse=True)
+    self._send_json(200, {"enrollments": out})

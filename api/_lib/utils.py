@@ -105,6 +105,36 @@ def next_send_time(after_days=0):
     return int(target.astimezone(timezone.utc).timestamp())
 
 
+def next_send_time_soon(min_delay_seconds=60, max_delay_seconds=600):
+    """Like next_send_time, but for a contact's very first email: send
+    within a few minutes of enrollment (default 1-10 min, comfortably under
+    a 30-minute target once combined with the 15-minute cron cadence)
+    instead of at a random point anywhere in the rest of the day. Still
+    respects the 8am-6pm window - if enrollment happens outside it, the
+    short random offset is applied from the next window's start instead.
+    """
+    start_hour, end_hour = send_window_hours()
+    local_now = now_local()
+    offset = timedelta(seconds=random.randint(min_delay_seconds, max_delay_seconds))
+
+    window_start_today = datetime.combine(local_now.date(), datetime.min.time(), tzinfo=send_tz()).replace(hour=start_hour)
+    window_end_today = datetime.combine(local_now.date(), datetime.min.time(), tzinfo=send_tz()).replace(hour=end_hour)
+
+    if local_now < window_start_today:
+        target = window_start_today + offset
+    elif local_now >= window_end_today:
+        tomorrow = local_now.date() + timedelta(days=1)
+        target = datetime.combine(tomorrow, datetime.min.time(), tzinfo=send_tz()).replace(hour=start_hour) + offset
+    else:
+        candidate = local_now + offset
+        # Don't let the short offset push past today's close - if enrollment
+        # happens right near the end of the window, send just before close
+        # instead of waiting for tomorrow's window (respects "within 30 min").
+        target = candidate if candidate < window_end_today else window_end_today - timedelta(seconds=30)
+
+    return int(target.astimezone(timezone.utc).timestamp())
+
+
 MERGE_TAG_RE = re.compile(r"\{\{\s*([a-zA-Z0-9_]+)\s*\}\}")
 
 

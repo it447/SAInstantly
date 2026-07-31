@@ -51,6 +51,15 @@
       </div>
     </div>
 
+    <div class="section card" id="enrollments-card" style="display:none; margin-top:2rem">
+      <h2>Enrolled contacts</h2>
+      <table>
+        <thead><tr><th>Contact</th><th>Status</th><th>Step</th><th>Next send</th><th>Enrolled</th></tr></thead>
+        <tbody id="enrollments-body"></tbody>
+      </table>
+      <div class="empty" id="enrollments-empty" style="display:none">No contacts enrolled yet.</div>
+    </div>
+
     <div class="section card" id="logs-card" style="display:none; margin-top:2rem">
       <h2>Activity log</h2>
       <table>
@@ -199,6 +208,7 @@
       document.getElementById("steps").innerHTML = "";
       document.getElementById("delete-btn").style.display = "none";
       document.getElementById("logs-card").style.display = "none";
+      document.getElementById("enrollments-card").style.display = "none";
       addStepRow();
       renderList();
     }
@@ -212,6 +222,7 @@
       seq.steps.forEach(addStepRow);
       document.getElementById("delete-btn").style.display = "inline-flex";
       renderList();
+      loadEnrollments(seq.id);
       loadLogs(seq.id);
     }
 
@@ -236,6 +247,31 @@
           const seq = sequences.find((s) => s.id === row.dataset.id);
           if (seq) loadIntoEditor(seq);
         });
+      });
+    }
+
+    async function loadEnrollments(id) {
+      const { enrollments } = await api(`/api/sequences/enrollments?id=${encodeURIComponent(id)}`);
+      const card = document.getElementById("enrollments-card");
+      const body = document.getElementById("enrollments-body");
+      const empty = document.getElementById("enrollments-empty");
+      card.style.display = "block";
+      body.innerHTML = "";
+      if (enrollments.length === 0) {
+        empty.style.display = "block";
+        return;
+      }
+      empty.style.display = "none";
+      enrollments.forEach((e) => {
+        const name = [e.firstname, e.lastname].filter(Boolean).join(" ");
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${escapeHtml(e.email)}${name ? `<div class="muted" style="font-size:0.8rem">${escapeHtml(name)}</div>` : ""}</td>
+          <td><span class="badge ${e.status}">${escapeHtml(e.status.replace(/_/g, " "))}</span></td>
+          <td>${e.step_index == null ? "—" : `Step ${e.step_index + 1}`}</td>
+          <td>${e.next_send_at ? fmtUnix(e.next_send_at) : "—"}</td>
+          <td>${fmtDate(e.enrolled_at)}</td>`;
+        body.appendChild(tr);
       });
     }
 

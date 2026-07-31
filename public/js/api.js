@@ -63,3 +63,10 @@ function fmtDate(iso) {
   if (isNaN(d.getTime())) return iso;
   return d.toLocaleString();
 }
+
+function fmtUnix(seconds) {
+  if (!seconds && seconds !== 0) return "";
+  const d = new Date(seconds * 1000);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleString();
+}
