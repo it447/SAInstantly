@@ -68,26 +68,3 @@ def queue_check(self):
             "queue_preview": queue_preview,
         },
     )
-
-
-def backfill_sequence_index(self):
-    """One-time fix: the sequence.html contacts view is powered by a
-    sequence_contacts:{sequence_id} index that only started being populated
-    when that feature shipped, so contacts enrolled before then are invisible
-    to it. This walks the active_enrollments set (the only existing registry
-    of enrollment emails) and backfills the index for anyone still active.
-    Contacts that already completed/replied/unsubscribed before this
-    shipped won't be recovered - only currently-active ones are. Safe to
-    remove once run."""
-    if not require_auth(self):
-        return
-
-    backfilled = []
-    for email in enrollment.list_active_emails():
-        enr = models.get_enrollment(email)
-        if not enr:
-            continue
-        models.add_sequence_contact(enr["sequence_id"], email)
-        backfilled.append({"email": email, "sequence_id": enr["sequence_id"]})
-
-    self._send_json(200, {"ok": True, "backfilled": backfilled})

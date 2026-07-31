@@ -1,4 +1,4 @@
-from _lib import models
+from _lib import enrollment, models
 from _lib.auth import require_auth
 from _lib.utils import new_id, now_utc
 
@@ -109,6 +109,15 @@ def detail(self):
     if not sequence:
         self._send_json(404, {"error": "sequence not found"})
         return
+
+    # Self-heal: contacts enrolled before the sequence_contacts index existed
+    # (or before this specific contact's index entry was otherwise written)
+    # are still tracked in active_enrollments, so backfill from there on
+    # every load instead of requiring a one-off manual fix.
+    for active_email in enrollment.list_active_emails():
+        active_enr = models.get_enrollment(active_email)
+        if active_enr:
+            models.add_sequence_contact(active_enr["sequence_id"], active_email)
 
     records = models.list_enrollments_for_sequence(sequence_id)
     stats = {"total": len(records), "active": 0, "completed": 0, "replied": 0, "unsubscribed": 0, "failed": 0, "moved_to_other_sequence": 0}

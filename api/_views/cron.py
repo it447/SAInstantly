@@ -114,9 +114,9 @@ def _run_send():
         step = steps[step_index]
         contact = enr["contact"]
         subject = render_merge_tags(step["subject"], contact.get("properties", {}))
-        body = _build_body(step, contact, sequence_id)
 
         try:
+            body = _build_body(step, contact, sequence_id)
             access_token, refreshed = gmail.get_valid_access_token(account)
             if refreshed:
                 account.update(refreshed)

@@ -177,6 +177,12 @@ def verify_unsubscribe_token(email, sequence_id, token):
 
 def unsubscribe_link(email, sequence_id):
     base = os.environ.get("APP_BASE_URL", "").rstrip("/")
+    if not base:
+        # Without a real domain this would go out as a relative path
+        # (e.g. "/api/unsubscribe?...") - meaningless and broken-looking in
+        # an email client, and a bad look for a compliance-required
+        # unsubscribe link. Fail loudly instead of silently mailing it out.
+        raise RuntimeError("APP_BASE_URL is not set - required to build a working unsubscribe link")
     token = unsubscribe_token(email, sequence_id)
     from urllib.parse import quote
 

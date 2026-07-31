@@ -24,7 +24,6 @@ from _views import accounts, auth, cron, dashboard, debug, hubspot, sequences, u
 ROUTES = {
     ("GET", "/api/debug/redis_check"): debug.redis_check,
     ("GET", "/api/debug/queue_check"): debug.queue_check,
-    ("GET", "/api/debug/backfill_sequence_index"): debug.backfill_sequence_index,
     ("GET", "/api/auth/status"): auth.status,
     ("GET", "/api/auth/login"): auth.login,
     ("POST", "/api/auth/logout"): auth.logout,
