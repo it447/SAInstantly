@@ -3,7 +3,7 @@ import time
 
 from _lib import enrollment, gmail, hubspot_client, models
 from _lib.auth import require_cron_auth
-from _lib.utils import now_local, render_merge_tags, send_window_hours, sequence_merge_tag_properties, unsubscribe_link
+from _lib.utils import now_local, render_merge_tags, send_window_hours, sequence_merge_tag_properties
 
 def _sync_mapping(mapping, api_key):
     list_id = mapping["list_id"]
@@ -58,10 +58,9 @@ def _in_send_window():
     return start_hour <= hour < end_hour
 
 
-def _build_body(step, contact, sequence_id):
+def _build_body(step, contact):
     rendered = render_merge_tags(step["body"], contact.get("properties", {}))
-    link = unsubscribe_link(contact["email"], sequence_id)
-    return f"{rendered}\n\n---\nUnsubscribe: {link}"
+    return f"{rendered}\n\n---\nReply STOP to unsubscribe."
 
 
 def _run_send():
@@ -116,7 +115,7 @@ def _run_send():
         subject = render_merge_tags(step["subject"], contact.get("properties", {}))
 
         try:
-            body = _build_body(step, contact, sequence_id)
+            body = _build_body(step, contact)
             access_token, refreshed = gmail.get_valid_access_token(account)
             if refreshed:
                 account.update(refreshed)

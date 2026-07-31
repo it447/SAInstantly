@@ -19,7 +19,7 @@ from urllib.parse import parse_qs, urlparse
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _lib.http import BaseHandler
-from _views import accounts, auth, cron, dashboard, debug, hubspot, sequences, unsubscribe
+from _views import accounts, auth, cron, dashboard, debug, hubspot, sequences
 
 ROUTES = {
     ("GET", "/api/debug/redis_check"): debug.redis_check,
@@ -49,7 +49,6 @@ ROUTES = {
     ("GET", "/api/cron/poll_replies"): cron.poll_replies,
     ("POST", "/api/cron/poll_replies"): cron.poll_replies,
     ("GET", "/api/dashboard/stats"): dashboard.stats,
-    ("GET", "/api/unsubscribe"): unsubscribe.unsubscribe,
 }
 
 

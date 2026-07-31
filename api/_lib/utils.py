@@ -1,5 +1,3 @@
-import hashlib
-import hmac
 import json
 import os
 import random
@@ -164,26 +162,3 @@ def sequence_merge_tag_properties(sequence):
     return properties
 
 
-def unsubscribe_token(email, sequence_id):
-    secret = os.environ.get("UNSUBSCRIBE_SECRET", "").encode("utf-8")
-    payload = f"{email}:{sequence_id}".encode("utf-8")
-    return hmac.new(secret, payload, hashlib.sha256).hexdigest()[:32]
-
-
-def verify_unsubscribe_token(email, sequence_id, token):
-    expected = unsubscribe_token(email, sequence_id)
-    return hmac.compare_digest(expected, token or "")
-
-
-def unsubscribe_link(email, sequence_id):
-    base = os.environ.get("APP_BASE_URL", "").rstrip("/")
-    if not base:
-        # Without a real domain this would go out as a relative path
-        # (e.g. "/api/unsubscribe?...") - meaningless and broken-looking in
-        # an email client, and a bad look for a compliance-required
-        # unsubscribe link. Fail loudly instead of silently mailing it out.
-        raise RuntimeError("APP_BASE_URL is not set - required to build a working unsubscribe link")
-    token = unsubscribe_token(email, sequence_id)
-    from urllib.parse import quote
-
-    return f"{base}/api/unsubscribe?e={quote(email)}&s={quote(sequence_id)}&t={token}"

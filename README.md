@@ -22,8 +22,9 @@ Python/Vercel serverless functions + Upstash Redis + vanilla JS frontend.
   respects a global daily cap (default 500) and per-account daily limits
 - Per-sequence detail page (click a sequence from the dashboard) with roll-up stats (enrolled, active, sent,
   completed, replied, unsubscribed/failed) and a table of every enrolled contact's status and next send time
-- Reply detection (cron every 30 min) that stops a contact's sequence automatically
-- One-click unsubscribe link on every email that stops the sequence permanently
+- Reply detection (cron every 30 min) that stops a contact's sequence automatically — this is also how
+  opt-outs are handled: every email ends with a plain-text "Reply STOP to unsubscribe" line rather than a
+  clickable link, and any reply (STOP or otherwise) stops that contact's sequence for good
 - Dashboard with active sequences, contacts enrolled, emails sent today, replies, unsubscribes
 
 Lead/contact data is never deleted — enrollments are only ever marked `completed`,
@@ -47,7 +48,6 @@ api/
     hubspot.py     API key + list-to-sequence mapping config
     cron.py        send (every 15 min), poll_replies (every 30 min), hubspot_sync (every 15 min)
     dashboard.py   stats endpoint
-    unsubscribe.py public unsubscribe landing page
 public/            static vanilla JS/HTML/CSS frontend
 ```
 
@@ -103,7 +103,7 @@ properties-schema endpoint, which is unrelated to the Lists API and unaffected b
 ### 4. Environment variables
 
 See `.env.example`. Required: `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`,
-`APP_PASSWORD`, `UNSUBSCRIBE_SECRET`, `APP_BASE_URL`, `GOOGLE_CLIENT_ID`,
+`APP_PASSWORD`, `APP_BASE_URL`, `GOOGLE_CLIENT_ID`,
 `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `CRON_SECRET`.
 
 ### 5. Deploy to Vercel
