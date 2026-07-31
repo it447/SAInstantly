@@ -1,4 +1,4 @@
-from _lib import enrollment, models
+from _lib import enrollment, gmail, models
 from _lib.auth import require_auth
 from _lib.utils import new_id, now_utc
 
@@ -159,3 +159,55 @@ def detail(self):
             "contacts": contacts,
         },
     )
+
+
+def thread(self):
+    """The actual sent email(s) and any replies for one enrolled contact, so
+    you can read the conversation instead of just a status badge."""
+    if not require_auth(self):
+        return
+    query = self._query()
+    email = (query.get("email", [None])[0] or "").strip().lower()
+    sequence_id = query.get("sequence_id", [None])[0]
+    if not email or not sequence_id:
+        self._send_json(400, {"error": "email and sequence_id are required"})
+        return
+
+    enr = models.get_enrollment(email)
+    if not enr or enr.get("sequence_id") != sequence_id:
+        self._send_json(404, {"error": "no enrollment found for this contact in this sequence"})
+        return
+
+    if not enr.get("thread_id") or not enr.get("account_id"):
+        self._send_json(200, {"messages": [], "note": "No email has been sent to this contact yet."})
+        return
+
+    account = models.get_account(enr["account_id"])
+    if not account:
+        self._send_json(404, {"error": "The account this was sent from no longer exists."})
+        return
+
+    access_token, refreshed = gmail.get_valid_access_token(account)
+    if refreshed:
+        account.update(refreshed)
+        models.save_account(account)
+
+    thread_data = gmail.get_thread_full(access_token, enr["thread_id"])
+    account_email = account["email"].strip().lower()
+
+    messages = []
+    for msg in thread_data.get("messages", []):
+        headers = {h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])}
+        from_header = headers.get("From", "")
+        messages.append(
+            {
+                "from": from_header,
+                "to": headers.get("To", ""),
+                "date": headers.get("Date", ""),
+                "subject": headers.get("Subject", ""),
+                "body": gmail.extract_message_text(msg.get("payload", {})),
+                "direction": "sent" if account_email in from_header.lower() else "received",
+            }
+        )
+
+    self._send_json(200, {"messages": messages})

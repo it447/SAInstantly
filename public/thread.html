@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Conversation — Cold Email Sequencer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav class="nav" id="nav"></nav>
+  <div class="container">
+    <div class="row" style="align-items:center; justify-content:space-between">
+      <h1 id="title">Conversation</h1>
+      <a class="btn secondary" id="back-link" href="#">&larr; Back to sequence</a>
+    </div>
+
+    <div class="section card">
+      <div id="messages"></div>
+      <div class="empty" id="empty" style="display:none"></div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    async function load() {
+      renderNav("");
+      const params = new URLSearchParams(window.location.search);
+      const email = params.get("email");
+      const sequenceId = params.get("sequence_id");
+      document.getElementById("back-link").href = `/sequence.html?id=${encodeURIComponent(sequenceId || "")}`;
+
+      if (!email || !sequenceId) {
+        document.getElementById("title").textContent = "No contact specified";
+        return;
+      }
+      document.getElementById("title").textContent = email;
+
+      const { messages, note, error } = await api(
+        `/api/sequences/thread?email=${encodeURIComponent(email)}&sequence_id=${encodeURIComponent(sequenceId)}`
+      );
+
+      const container = document.getElementById("messages");
+      const empty = document.getElementById("empty");
+
+      if (error) {
+        empty.textContent = error;
+        empty.style.display = "block";
+        return;
+      }
+      if (!messages || messages.length === 0) {
+        empty.textContent = note || "No messages yet.";
+        empty.style.display = "block";
+        return;
+      }
+
+      container.innerHTML = messages
+        .map(
+          (m) => `
+        <div class="msg-card ${m.direction}">
+          <div class="msg-meta">
+            <span>${escapeHtml(m.from)} &rarr; ${escapeHtml(m.to)}</span>
+            <span>${escapeHtml(m.date)}</span>
+          </div>
+          <div class="msg-subject">${escapeHtml(m.subject)}</div>
+          <div class="msg-body">${escapeHtml(m.body)}</div>
+        </div>`
+        )
+        .join("");
+    }
+
+    load().catch((err) => {
+      if (err.message !== "unauthorized") {
+        console.error(err);
+        document.getElementById("empty").textContent = err.message;
+        document.getElementById("empty").style.display = "block";
+      }
+    });
+  </script>
+</body>
+</html>

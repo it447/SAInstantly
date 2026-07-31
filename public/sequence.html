@@ -81,6 +81,12 @@
             <td>${c.step_index == null ? "—" : `Step ${c.step_index + 1}`}</td>
             <td>${c.next_send_at ? fmtUnix(c.next_send_at) : "—"}</td>
             <td>${fmtDate(c.enrolled_at)}</td>`;
+          if (c.status !== "moved_to_other_sequence") {
+            tr.setAttribute("data-clickable", "");
+            tr.addEventListener("click", () => {
+              window.location.href = `/thread.html?email=${encodeURIComponent(c.email)}&sequence_id=${encodeURIComponent(sequence.id)}`;
+            });
+          }
           tbody.appendChild(tr);
         });
       }

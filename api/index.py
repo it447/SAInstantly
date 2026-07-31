@@ -38,6 +38,7 @@ ROUTES = {
     ("POST", "/api/sequences/delete"): sequences.delete,
     ("GET", "/api/sequences/logs"): sequences.logs,
     ("GET", "/api/sequences/detail"): sequences.detail,
+    ("GET", "/api/sequences/thread"): sequences.thread,
     ("GET", "/api/hubspot/config"): hubspot.config,
     ("GET", "/api/hubspot/properties"): hubspot.properties,
     ("GET", "/api/hubspot/lists"): hubspot.lists,

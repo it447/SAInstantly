@@ -124,3 +124,13 @@ label { font-size: 0.85rem; color: var(--muted); display: block; margin-bottom: 
 .login-card { width: 320px; }
 
 .empty { color: var(--muted); font-size: 0.9rem; padding: 1rem 0; }
+
+table tbody tr[data-clickable] { cursor: pointer; }
+table tbody tr[data-clickable]:hover { background: var(--bg); }
+
+.msg-card { border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem; border-left: 3px solid var(--border); }
+.msg-card.sent { border-left-color: var(--accent); }
+.msg-card.received { border-left-color: var(--success); }
+.msg-card .msg-meta { display: flex; justify-content: space-between; gap: 1rem; font-size: 0.82rem; color: var(--muted); margin-bottom: 0.5rem; }
+.msg-card .msg-subject { font-weight: 600; margin-bottom: 0.5rem; }
+.msg-card .msg-body { white-space: pre-wrap; font-size: 0.92rem; line-height: 1.5; }
