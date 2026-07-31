@@ -7,22 +7,28 @@
 <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-  <nav class="nav" id="nav"></nav>
-  <div class="container">
-    <h1>Dashboard</h1>
+<script>document.body.classList.toggle('light-mode', localStorage.getItem('theme') === 'light');</script>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="main">
+      <div class="container">
+        <h1>Dashboard</h1>
+        <div class="orange-bar"></div>
 
-    <div class="grid stats" id="stats"></div>
+        <div class="grid stats" id="stats"></div>
 
-    <div class="section card">
-      <h2>Sequences</h2>
-      <table id="sequences-table">
-        <thead>
-          <tr><th>Name</th><th>Status</th><th>Steps</th></tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-      <div class="empty" id="sequences-empty" style="display:none">No sequences yet. <a href="/sequences.html">Create one</a>.</div>
-    </div>
+        <div class="section card">
+          <h2>Sequences</h2>
+          <table id="sequences-table">
+            <thead>
+              <tr><th>Name</th><th>Status</th><th>Steps</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <div class="empty" id="sequences-empty" style="display:none">No sequences yet. <a href="/sequences.html">Create one</a>.</div>
+        </div>
+      </div>
+    </main>
   </div>
 
   <script src="/js/api.js"></script>

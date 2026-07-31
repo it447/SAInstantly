@@ -23,6 +23,10 @@ async function api(path, options) {
   return data;
 }
 
+function applyStoredTheme() {
+  document.body.classList.toggle("light-mode", localStorage.getItem("theme") === "light");
+}
+
 function renderNav(active) {
   const links = [
     ["/index.html", "Dashboard"],
@@ -30,20 +34,39 @@ function renderNav(active) {
     ["/accounts.html", "Accounts"],
     ["/hubspot.html", "HubSpot"],
   ];
-  const el = document.getElementById("nav");
+  const el = document.getElementById("sidebar");
   if (!el) return;
-  el.innerHTML =
-    '<div class="brand">Cold Email Sequencer</div>' +
-    links
-      .map(
-        ([href, label]) =>
-          `<a href="${href}"${href === active ? ' class="active"' : ""}>${label}</a>`
-      )
-      .join("") +
-    '<button id="logout-btn">Log out</button>';
+  el.innerHTML = `
+    <div class="sidebar-brand">
+      <div class="brand-s">S</div>
+      <div class="brand-name">Cold Email<br>Sequencer</div>
+    </div>
+    <nav class="sidebar-nav">
+      ${links
+        .map(
+          ([href, label]) =>
+            `<a href="${href}" class="nav-item${href === active ? " active" : ""}">${label}</a>`
+        )
+        .join("")}
+    </nav>
+    <div class="sidebar-footer">
+      <label class="toggle" title="Toggle light/dark mode">
+        <input type="checkbox" id="theme-toggle">
+        <span class="toggle-slider"></span>
+      </label>
+      <button id="logout-btn" class="nav-item" type="button">Log out</button>
+    </div>`;
+
   document.getElementById("logout-btn").addEventListener("click", () => {
     localStorage.removeItem("auth_token");
     window.location.href = "/login.html";
+  });
+
+  const themeToggle = document.getElementById("theme-toggle");
+  themeToggle.checked = document.body.classList.contains("light-mode");
+  themeToggle.addEventListener("change", () => {
+    document.body.classList.toggle("light-mode", themeToggle.checked);
+    localStorage.setItem("theme", themeToggle.checked ? "light" : "dark");
   });
 }
 

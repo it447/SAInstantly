@@ -7,8 +7,10 @@
 <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
+<script>document.body.classList.toggle('light-mode', localStorage.getItem('theme') === 'light');</script>
   <div class="login-wrap">
     <div class="card login-card">
+      <div class="brand-s">S</div>
       <h1>Cold Email Sequencer</h1>
       <form id="login-form">
         <div class="field">

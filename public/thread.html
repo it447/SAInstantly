@@ -7,17 +7,23 @@
 <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-  <nav class="nav" id="nav"></nav>
-  <div class="container">
+<script>document.body.classList.toggle('light-mode', localStorage.getItem('theme') === 'light');</script>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="main">
+    <div class="container">
     <div class="row" style="align-items:center; justify-content:space-between">
       <h1 id="title">Conversation</h1>
       <a class="btn secondary" id="back-link" href="#">&larr; Back to sequence</a>
     </div>
+    <div class="orange-bar"></div>
 
     <div class="section card">
       <div id="messages"></div>
       <div class="empty" id="empty" style="display:none"></div>
     </div>
+    </div>
+    </main>
   </div>
 
   <script src="/js/api.js"></script>

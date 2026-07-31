@@ -7,9 +7,13 @@
 <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-  <nav class="nav" id="nav"></nav>
-  <div class="container">
+<script>document.body.classList.toggle('light-mode', localStorage.getItem('theme') === 'light');</script>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="main">
+    <div class="container">
     <h1>Connected accounts</h1>
+    <div class="orange-bar"></div>
     <div id="banner"></div>
 
     <div class="card section">
@@ -28,6 +32,8 @@
       </table>
       <div class="empty" id="accounts-empty" style="display:none">No accounts connected yet.</div>
     </div>
+    </div>
+    </main>
   </div>
 
   <script src="/js/api.js"></script>

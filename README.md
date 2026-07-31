@@ -5,6 +5,9 @@ Python/Vercel serverless functions + Upstash Redis + vanilla JS frontend.
 
 ## Features
 
+- Scale Army's shared design system: navy/cream/orange palette, Playfair Display + DM Sans, dark mode by
+  default with a light-mode toggle (persisted in `localStorage`), sidebar navigation matching the other
+  internal tools
 - Password-protected login. The typed password is sent as an `X-Auth-Token` header on every request and
   checked directly against `APP_PASSWORD` - no server-side session, cookies, or Redis storage involved. The
   frontend keeps it in `localStorage` after a successful login

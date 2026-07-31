@@ -7,9 +7,13 @@
 <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-  <nav class="nav" id="nav"></nav>
-  <div class="container">
+<script>document.body.classList.toggle('light-mode', localStorage.getItem('theme') === 'light');</script>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="main">
+    <div class="container">
     <h1>Sequences</h1>
+    <div class="orange-bar"></div>
 
     <div class="row" style="align-items:flex-start">
       <div class="card" style="flex: 0 0 260px">
@@ -60,6 +64,8 @@
       </table>
       <div class="empty" id="logs-empty" style="display:none">No activity yet.</div>
     </div>
+    </div>
+    </main>
   </div>
 
   <template id="step-template">
