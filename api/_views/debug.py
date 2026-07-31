@@ -68,3 +68,56 @@ def queue_check(self):
             "queue_preview": queue_preview,
         },
     )
+
+
+def poll_replies_now(self):
+    """Manually runs the same reply-check the cron does (every 30 min on
+    schedule), for troubleshooting - lets you confirm reply detection works
+    right after replying instead of waiting for the next scheduled tick.
+    Also reports why a contact was skipped (no thread yet, account missing,
+    etc.) so a real bug doesn't look identical to "just needs to wait".
+    Safe to remove once the app is stable."""
+    if not require_auth(self):
+        return
+
+    from _lib import gmail
+    from _views.cron import _thread_has_reply_from_contact
+
+    checked = []
+    for email in enrollment.list_active_emails():
+        enr = models.get_enrollment(email)
+        if not enr or enr.get("status") != "active":
+            checked.append({"email": email, "skipped": "not an active enrollment"})
+            continue
+        if not enr.get("thread_id") or not enr.get("account_id"):
+            checked.append({"email": email, "skipped": "no email sent yet (no thread_id/account_id)"})
+            continue
+
+        account = models.get_account(enr["account_id"])
+        if not account:
+            checked.append({"email": email, "skipped": "sending account no longer exists"})
+            continue
+
+        try:
+            access_token, refreshed = gmail.get_valid_access_token(account)
+            if refreshed:
+                account.update(refreshed)
+                models.save_account(account)
+            thread = gmail.get_thread(access_token, enr["thread_id"])
+            has_reply = _thread_has_reply_from_contact(thread, email, account["email"])
+            checked.append(
+                {
+                    "email": email,
+                    "thread_id": enr["thread_id"],
+                    "message_count_in_thread": len(thread.get("messages", [])),
+                    "reply_detected": has_reply,
+                }
+            )
+        except Exception as exc:
+            checked.append({"email": email, "error_type": type(exc).__name__, "error": str(exc)[:300]})
+
+    from _views.cron import _run_poll_replies
+
+    run_result = _run_poll_replies()
+
+    self._send_json(200, {"diagnostic": checked, "run_result": run_result})
