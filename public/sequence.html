@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sequence — Cold Email Sequencer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav class="nav" id="nav"></nav>
+  <div class="container">
+    <div class="row" style="align-items:center; justify-content:space-between">
+      <h1 id="title">Sequence</h1>
+      <div style="display:flex; gap:0.75rem; align-items:center">
+        <span class="badge" id="status-badge" style="display:none"></span>
+        <a class="btn secondary" id="edit-link" href="#">Edit sequence</a>
+      </div>
+    </div>
+
+    <div class="grid stats" id="stats"></div>
+
+    <div class="section card" style="margin-top:2rem">
+      <h2>Enrolled contacts</h2>
+      <table>
+        <thead>
+          <tr><th>Contact</th><th>Status</th><th>Step</th><th>Next send</th><th>Enrolled</th></tr>
+        </thead>
+        <tbody id="contacts-body"></tbody>
+      </table>
+      <div class="empty" id="contacts-empty" style="display:none">No contacts enrolled yet.</div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    function statTile(value, label) {
+      return `<div class="card stat-tile"><div class="value">${value}</div><div class="label">${label}</div></div>`;
+    }
+
+    async function load() {
+      renderNav("");
+      const params = new URLSearchParams(window.location.search);
+      const id = params.get("id");
+      if (!id) {
+        document.getElementById("title").textContent = "No sequence specified";
+        return;
+      }
+
+      const { sequence, stats, contacts } = await api(`/api/sequences/detail?id=${encodeURIComponent(id)}`);
+
+      document.title = `${sequence.name} — Cold Email Sequencer`;
+      document.getElementById("title").textContent = sequence.name;
+      document.getElementById("edit-link").href = `/sequences.html?id=${encodeURIComponent(sequence.id)}`;
+      const statusBadge = document.getElementById("status-badge");
+      statusBadge.textContent = sequence.status;
+      statusBadge.className = `badge ${sequence.status}`;
+      statusBadge.style.display = "inline-block";
+
+      document.getElementById("stats").innerHTML = [
+        statTile(stats.total, "Total enrolled"),
+        statTile(stats.active, "Currently active"),
+        statTile(stats.sent, "Emails sent"),
+        statTile(stats.completed, "Completed"),
+        statTile(stats.replied, "Replied"),
+        statTile(stats.unsubscribed + stats.failed, "Unsubscribed / failed"),
+      ].join("");
+
+      const tbody = document.getElementById("contacts-body");
+      const empty = document.getElementById("contacts-empty");
+      tbody.innerHTML = "";
+      if (contacts.length === 0) {
+        empty.style.display = "block";
+      } else {
+        empty.style.display = "none";
+        contacts.forEach((c) => {
+          const name = [c.firstname, c.lastname].filter(Boolean).join(" ");
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${escapeHtml(c.email)}${name ? `<div class="muted" style="font-size:0.8rem">${escapeHtml(name)}</div>` : ""}</td>
+            <td><span class="badge ${c.status}">${escapeHtml(c.status.replace(/_/g, " "))}</span></td>
+            <td>${c.step_index == null ? "—" : `Step ${c.step_index + 1}`}</td>
+            <td>${c.next_send_at ? fmtUnix(c.next_send_at) : "—"}</td>
+            <td>${fmtDate(c.enrolled_at)}</td>`;
+          tbody.appendChild(tr);
+        });
+      }
+    }
+
+    load().catch((err) => {
+      if (err.message !== "unauthorized") {
+        console.error(err);
+        document.getElementById("title").textContent = "Failed to load sequence";
+      }
+    });
+  </script>
+</body>
+</html>

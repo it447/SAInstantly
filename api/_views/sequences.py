@@ -93,7 +93,10 @@ def logs(self):
     self._send_json(200, {"logs": entries})
 
 
-def enrollments(self):
+def detail(self):
+    """Everything the standalone per-sequence page needs: the sequence
+    itself, roll-up stats, and every contact ever enrolled in it with their
+    current status and next send time."""
     if not require_auth(self):
         return
     query = self._query()
@@ -102,8 +105,14 @@ def enrollments(self):
         self._send_json(400, {"error": "id is required"})
         return
 
+    sequence = models.get_sequence(sequence_id)
+    if not sequence:
+        self._send_json(404, {"error": "sequence not found"})
+        return
+
     records = models.list_enrollments_for_sequence(sequence_id)
-    out = []
+    stats = {"total": len(records), "active": 0, "completed": 0, "replied": 0, "unsubscribed": 0, "failed": 0, "moved_to_other_sequence": 0}
+    contacts = []
     for e in records:
         contact = e.get("contact") or {}
         properties = contact.get("properties") or {}
@@ -111,17 +120,33 @@ def enrollments(self):
         # contact who has since moved on to a different one shows up here
         # with whatever status they were left at, not this sequence's steps.
         in_this_sequence = e.get("sequence_id") == sequence_id
-        out.append(
+        status = e.get("status") if in_this_sequence else "moved_to_other_sequence"
+        stats[status] = stats.get(status, 0) + 1
+        contacts.append(
             {
                 "email": e["email"],
                 "firstname": properties.get("firstname"),
                 "lastname": properties.get("lastname"),
-                "status": e.get("status") if in_this_sequence else "moved_to_other_sequence",
+                "status": status,
                 "step_index": e.get("step_index", 0) if in_this_sequence else None,
-                "next_send_at": e.get("next_send_at") if in_this_sequence and e.get("status") == "active" else None,
+                "next_send_at": e.get("next_send_at") if in_this_sequence and status == "active" else None,
                 "enrolled_at": e.get("enrolled_at"),
                 "updated_at": e.get("updated_at"),
             }
         )
-    out.sort(key=lambda e: e.get("enrolled_at") or "", reverse=True)
-    self._send_json(200, {"enrollments": out})
+    contacts.sort(key=lambda e: e.get("enrolled_at") or "", reverse=True)
+    stats["sent"] = models.get_stat(f"stats:sequence:{sequence_id}:sent") or 0
+
+    self._send_json(
+        200,
+        {
+            "sequence": {
+                "id": sequence["id"],
+                "name": sequence["name"],
+                "status": sequence.get("status"),
+                "steps": len(sequence.get("steps", [])),
+            },
+            "stats": stats,
+            "contacts": contacts,
+        },
+    )

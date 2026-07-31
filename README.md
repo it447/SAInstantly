@@ -20,8 +20,8 @@ Python/Vercel serverless functions + Upstash Redis + vanilla JS frontend.
 - Scheduled sending (cron every 15 min): a contact's first email in a sequence goes out within a few minutes
   of enrollment (so leads hear back within ~30 minutes), later steps spread across the 8am–6pm ET window;
   respects a global daily cap (default 500) and per-account daily limits
-- Per-sequence contacts view (click a sequence from the dashboard or sequence list) showing every enrolled
-  contact's status and next scheduled send time
+- Per-sequence detail page (click a sequence from the dashboard) with roll-up stats (enrolled, active, sent,
+  completed, replied, unsubscribed/failed) and a table of every enrolled contact's status and next send time
 - Reply detection (cron every 30 min) that stops a contact's sequence automatically
 - One-click unsubscribe link on every email that stops the sequence permanently
 - Dashboard with active sequences, contacts enrolled, emails sent today, replies, unsubscribes

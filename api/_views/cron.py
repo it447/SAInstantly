@@ -147,6 +147,7 @@ def _run_send():
             enr["attempts"] = 0
 
             models.record_send_stat(account["id"])
+            models.incr_stat(f"stats:sequence:{sequence_id}:sent")
             models.append_log(
                 sequence_id,
                 {
