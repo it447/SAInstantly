@@ -1,8 +1,13 @@
 """Temporary diagnostic endpoints. Safe to remove once the app is stable --
-none of these expose secret values, only connectivity/config status."""
+none of these expose secret values. queue_check does return contact emails,
+so it requires auth; the others don't touch anything sensitive."""
 import os
+import time
 
+from _lib import enrollment, models
+from _lib.auth import require_auth
 from _lib.redis_client import get_redis
+from _lib.utils import now_local, now_utc, send_window_hours
 
 
 def redis_check(self):
@@ -19,3 +24,47 @@ def redis_check(self):
         result["error_type"] = type(exc).__name__
         result["error"] = str(exc)[:500]
     self._send_json(200, result)
+
+
+def queue_check(self):
+    if not require_auth(self):
+        return
+
+    start_hour, end_hour = send_window_hours()
+    local_now = now_local()
+    now_ts = time.time()
+
+    due = enrollment.due_members(limit=50, before_ts=now_ts + 24 * 3600)
+    queue_preview = []
+    for sequence_id, email, score in due:
+        queue_preview.append(
+            {
+                "sequence_id": sequence_id,
+                "email": email,
+                "next_send_at_unix": score,
+                "seconds_until_due": round(score - now_ts),
+                "is_due_now": score <= now_ts,
+            }
+        )
+    queue_preview.sort(key=lambda i: i["next_send_at_unix"])
+
+    accounts = models.list_accounts()
+    connected = [a for a in accounts if a.get("status") == "connected"]
+
+    self._send_json(
+        200,
+        {
+            "now_utc": now_utc().isoformat(),
+            "now_local": local_now.isoformat(),
+            "send_window_hours": [start_hour, end_hour],
+            "currently_in_send_window": start_hour <= local_now.hour < end_hour,
+            "daily_cap": enrollment.daily_cap(),
+            "sent_today": models.daily_sent_total(),
+            "connected_accounts": len(connected),
+            "account_daily_limits": [
+                {"email": a["email"], "daily_limit": a.get("daily_limit"), "sent_today": models.daily_sent_for_account(a["id"])}
+                for a in connected
+            ],
+            "queue_preview": queue_preview,
+        },
+    )
