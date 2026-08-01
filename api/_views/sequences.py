@@ -131,7 +131,7 @@ def detail(self):
             models.add_sequence_contact(active_enr["sequence_id"], active_email)
 
     records = models.list_enrollments_for_sequence(sequence_id)
-    stats = {"total": len(records), "active": 0, "completed": 0, "replied": 0, "unsubscribed": 0, "failed": 0, "moved_to_other_sequence": 0}
+    stats = {"total": len(records), "active": 0, "completed": 0, "replied": 0, "unsubscribed": 0, "failed": 0, "bounced": 0, "moved_to_other_sequence": 0}
     contacts = []
     for e in records:
         contact = e.get("contact") or {}

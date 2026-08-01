@@ -162,6 +162,21 @@ def record_unsubscribe_stat():
     incr_stat("stats:unsubscribes_total")
 
 
+def record_bounce_stat():
+    incr_stat(f"stats:bounces:{today_str_local()}")
+    incr_stat("stats:bounces_total")
+
+
+def bounce_message_seen(account_id, message_id):
+    r = get_redis()
+    return bool(r.sismember(f"bounce_seen:{account_id}", message_id))
+
+
+def mark_bounce_message_seen(account_id, message_id):
+    r = get_redis()
+    r.sadd(f"bounce_seen:{account_id}", message_id)
+
+
 # ------------------------------------------------------------------ hubspot
 
 def get_hubspot_config():

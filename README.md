@@ -29,10 +29,14 @@ Python/Vercel serverless functions + Upstash Redis + vanilla JS frontend.
 - Reply detection (cron every 30 min) that stops a contact's sequence automatically — this is also how
   opt-outs are handled: every email ends with a plain-text "Reply STOP to unsubscribe" line rather than a
   clickable link, and any reply (STOP or otherwise) stops that contact's sequence for good
-- Dashboard with active sequences, contacts enrolled, emails sent today, replies, unsubscribes
+- Bounce detection (same cron tick as reply detection) marks a contact `bounced` and stops their sequence.
+  Searches each connected account's own inbox for bounce-shaped messages (from mailer-daemon/postmaster, or a
+  "delivery status notification"/"undelivered mail" subject) and confirms which contact it's about by matching
+  a currently-active enrolled email address in the message text - skips ambiguous matches rather than guessing
+- Dashboard with active sequences, contacts enrolled, emails sent today, replies, bounces, unsubscribes
 
 Lead/contact data is never deleted — enrollments are only ever marked `completed`,
-`replied`, `unsubscribed`, or `failed`.
+`replied`, `bounced`, `unsubscribed`, or `failed`.
 
 ## Architecture
 
@@ -63,14 +67,17 @@ public/            static vanilla JS/HTML/CSS frontend
 | `enrollments:{email}` | string | json enrollment record (sequence, step, status, thread info) |
 | `sent:{email}:{sequence_id}` | string | dedup marker — a contact is never enrolled twice in the same sequence |
 | `accounts` | hash | `{account_id: json(account)}` — connected Gmail accounts + OAuth tokens |
-| `logs:{sequence_id}` | list | activity log entries (enrolled / sent / replied / unsubscribed / completed / errors), newest first, capped at 1000 |
+| `logs:{sequence_id}` | list | activity log entries (enrolled / sent / replied / bounced / unsubscribed / completed / errors), newest first, capped at 1000 |
 | `queue:pending` | zset | `{sequence_id}\|{email} -> next_send_at unix ts`, drives the send cron |
-| `active_enrollments` | set | emails with a currently-active enrollment, used by the reply-poll cron |
+| `active_enrollments` | set | emails with a currently-active enrollment, used by the reply/bounce-poll cron |
+| `sequence_contacts:{sequence_id}` | set | every email ever enrolled in that sequence, powers the sequence detail page |
+| `bounce_seen:{account_id}` | set | bounce-notification message IDs already checked for that account, so the same one isn't reprocessed every tick |
+| `blocklist_check:{domain}` | string | cached `{results, checked_at}` from the last domain blocklist check, TTL 24h |
 | `hubspot:config` | string | json `{mappings: [{list_id, list_name, sequence_id, sequence_name}]}` — the API key is never stored here, only `HUBSPOT_API_KEY` |
 | `hubspot:seen:{list_id}` | set | HubSpot contact IDs already scanned for that list |
 | `oauth:state:{state}` | string | CSRF state for the Gmail OAuth flow, TTL 10 min |
 | `stats:sent:{date}` / `stats:sent:{account_id}:{date}` | string | daily send counters (global + per account) |
-| `stats:enrolled_total`, `stats:active_enrollments`, `stats:replies:{date}`, `stats:replies_total`, `stats:unsubscribes:{date}`, `stats:unsubscribes_total` | string | dashboard counters |
+| `stats:enrolled_total`, `stats:active_enrollments`, `stats:replies:{date}`, `stats:replies_total`, `stats:bounces:{date}`, `stats:bounces_total`, `stats:unsubscribes:{date}`, `stats:unsubscribes_total` | string | dashboard counters |
 
 ## Setup
 

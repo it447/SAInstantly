@@ -46,6 +46,7 @@
         statTile(stats.active_enrollments, "Contacts currently enrolled"),
         statTile(`${stats.emails_sent_today} / ${stats.daily_cap}`, "Emails sent today"),
         statTile(stats.replies_today, "Replies today"),
+        statTile(stats.bounces_today, "Bounces today"),
         statTile(stats.unsubscribes_today, "Unsubscribes today"),
         statTile(stats.connected_accounts, "Connected accounts"),
       ].join("");

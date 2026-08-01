@@ -19,6 +19,8 @@ def _gather():
         "replies_total": lambda: models.get_stat("stats:replies_total"),
         "unsubscribes_today": lambda: models.get_stat(f"stats:unsubscribes:{date_str}"),
         "unsubscribes_total": lambda: models.get_stat("stats:unsubscribes_total"),
+        "bounces_today": lambda: models.get_stat(f"stats:bounces:{date_str}"),
+        "bounces_total": lambda: models.get_stat("stats:bounces_total"),
     }
 
     with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
@@ -40,6 +42,8 @@ def _gather():
         "replies_total": results["replies_total"],
         "unsubscribes_today": results["unsubscribes_today"],
         "unsubscribes_total": results["unsubscribes_total"],
+        "bounces_today": results["bounces_today"],
+        "bounces_total": results["bounces_total"],
         "connected_accounts": len([a for a in accounts if a.get("status") == "connected"]),
         "sequences": [
             {

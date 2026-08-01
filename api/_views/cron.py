@@ -253,7 +253,81 @@ def _run_poll_replies():
     return {"ok": True, "checked": checked, "replied": replied}
 
 
+# A bounce notification is a separate email that lands in the *sending*
+# account's own inbox (not a reply in the original thread), so it needs a
+# real Gmail search rather than checking a known thread_id. Bounces from all
+# sorts of receiving mail servers vary wildly in exact MIME format (DSN
+# compliance differs), so rather than parsing that structure, this searches
+# for bounce-shaped messages and then confirms which contact it's about by
+# checking whether exactly one currently-active enrolled email appears in
+# the subject/body text - simpler and more robust across formats than
+# trying to parse every provider's bounce layout.
+BOUNCE_SEARCH_QUERY = (
+    '(from:mailer-daemon OR from:postmaster OR subject:"delivery status notification" '
+    'OR subject:"undelivered mail" OR subject:"delivery has failed" '
+    'OR subject:"returned to sender" OR subject:"delivery incomplete") newer_than:3d'
+)
+
+
+def _run_poll_bounces():
+    active_emails = {e.strip().lower() for e in enrollment.list_active_emails()}
+    checked = 0
+    bounced = []
+
+    if not active_emails:
+        return {"ok": True, "checked": 0, "bounced": []}
+
+    for account in models.list_accounts():
+        if account.get("status") != "connected":
+            continue
+
+        try:
+            access_token, refreshed = gmail.get_valid_access_token(account)
+            if refreshed:
+                account.update(refreshed)
+                models.save_account(account)
+            candidates = gmail.search_messages(access_token, BOUNCE_SEARCH_QUERY)
+        except Exception:
+            # One account's search failing (e.g. a stale token) shouldn't
+            # stop bounce checking for the other connected accounts.
+            continue
+
+        for stub in candidates:
+            message_id = stub["id"]
+            if models.bounce_message_seen(account["id"], message_id):
+                continue
+            models.mark_bounce_message_seen(account["id"], message_id)
+            checked += 1
+
+            try:
+                full = gmail.get_message_full(access_token, message_id)
+            except Exception:
+                continue
+
+            payload = full.get("payload", {})
+            headers = {h["name"]: h["value"] for h in payload.get("headers", [])}
+            haystack = f"{headers.get('Subject', '')}\n{gmail.extract_message_text(payload)}".lower()
+            matches = [e for e in active_emails if e in haystack]
+            if len(matches) != 1:
+                # No active contact's address found, or more than one
+                # (ambiguous) - don't guess which enrollment this is about.
+                continue
+
+            bounced_email = matches[0]
+            enr = models.get_enrollment(bounced_email)
+            # A bounce always comes back to the account that sent the
+            # original message, so require that match too as a sanity check.
+            if not enr or enr.get("status") != "active" or enr.get("account_id") != account["id"]:
+                continue
+
+            enrollment.stop_sequence(enr, "bounced", reason="hard bounce detected")
+            models.record_bounce_stat()
+            bounced.append(bounced_email)
+
+    return {"ok": True, "checked": checked, "bounced": bounced}
+
+
 def poll_replies(self):
     if not require_cron_auth(self):
         return
-    self._send_json(200, _run_poll_replies())
+    self._send_json(200, {"ok": True, "replies": _run_poll_replies(), "bounces": _run_poll_bounces()})

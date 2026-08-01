@@ -133,6 +133,31 @@ def get_message(access_token, message_id):
     return resp.json()
 
 
+def get_message_full(access_token, message_id):
+    resp = requests.get(
+        f"{GMAIL_API}/messages/{message_id}",
+        headers={"Authorization": f"Bearer {access_token}"},
+        params={"format": "full"},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def search_messages(access_token, query, max_results=20):
+    """Gmail search (the same query syntax as the Gmail search box). Returns
+    a list of {"id", "threadId"} stubs - fetch each with get_message_full
+    for content."""
+    resp = requests.get(
+        f"{GMAIL_API}/messages",
+        headers={"Authorization": f"Bearer {access_token}"},
+        params={"q": query, "maxResults": max_results},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return resp.json().get("messages", [])
+
+
 def get_thread(access_token, thread_id):
     resp = requests.get(
         f"{GMAIL_API}/threads/{thread_id}",
