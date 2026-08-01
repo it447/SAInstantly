@@ -107,6 +107,36 @@ def list_accounts(self):
     self._send_json(200, {"accounts": [_public_account(a) for a in accounts]})
 
 
+def blocklist_status(self):
+    """Domain-reputation blocklist status for every unique domain among
+    connected accounts. Cached for 24h (checked_at is returned so the UI can
+    show staleness); pass ?refresh=1 to force a fresh check."""
+    if not require_auth(self):
+        return
+
+    force_refresh = self._query().get("refresh", ["0"])[0] == "1"
+    domains = sorted({a["email"].split("@", 1)[1] for a in models.list_accounts() if a.get("status") == "connected" and "@" in a.get("email", "")})
+
+    out = []
+    for domain in domains:
+        cached = None if force_refresh else models.get_cached_blocklist_check(domain)
+        if cached is None:
+            results = deliverability.check_domain_blocklists(domain)
+            checked_at = now_utc().isoformat()
+            models.save_blocklist_check(domain, results, checked_at)
+        else:
+            results = cached["results"]
+            checked_at = cached["checked_at"]
+        out.append({
+            "domain": domain,
+            "listed": any(r.get("listed") for r in results),
+            "results": results,
+            "checked_at": checked_at,
+        })
+
+    self._send_json(200, {"domains": out})
+
+
 def update(self):
     if not require_auth(self):
         return

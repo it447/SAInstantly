@@ -1,7 +1,7 @@
 import json
 
 from .redis_client import get_redis
-from .utils import today_str_local
+from .utils import now_utc, today_str_local
 
 # ---------------------------------------------------------------- sequences
 
@@ -187,3 +187,20 @@ def hubspot_contact_seen(list_id, email):
 def mark_hubspot_contact_seen(list_id, email):
     r = get_redis()
     r.sadd(f"hubspot:seen:{list_id}", email.strip().lower())
+
+
+# ------------------------------------------------------------ deliverability
+
+BLOCKLIST_CACHE_TTL_SECONDS = 24 * 3600
+
+
+def get_cached_blocklist_check(domain):
+    r = get_redis()
+    raw = r.get(f"blocklist_check:{domain.strip().lower()}")
+    return json.loads(raw) if raw else None
+
+
+def save_blocklist_check(domain, results, checked_at):
+    r = get_redis()
+    payload = json.dumps({"results": results, "checked_at": checked_at})
+    r.set(f"blocklist_check:{domain.strip().lower()}", payload, ex=BLOCKLIST_CACHE_TTL_SECONDS)

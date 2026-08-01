@@ -118,6 +118,12 @@ anything this app's code can reach or set on your behalf. One-time setup, per se
 Do this once per sending domain before connecting mailboxes on it — it protects deliverability for every
 mailbox on that domain, not just the ones this app sends from.
 
+Also worth setting up: [Google Postmaster Tools](https://postmaster.google.com) (verify the domain via a DNS
+TXT record). Since every email here goes out through Gmail's own infrastructure, Postmaster Tools is the one
+source that shows real domain/IP reputation, spam-rate, and delivery data straight from Google - more directly
+relevant than generic third-party blocklists, which are more useful for setups sending through a dedicated
+IP/custom SMTP server (like Instantly's), which this tool doesn't have.
+
 ### 4. HubSpot
 
 Create a private app in HubSpot with the `contacts` scope, and set its access token as the `HUBSPOT_API_KEY`
@@ -164,6 +170,11 @@ scheduler (e.g. cron-job.org) with the `Authorization: Bearer $CRON_SECRET` head
   connected, instead of sending at full volume from day one. The Accounts page shows a "Ramping (N/day)" badge
   while this is in effect. Set `WARMUP_ENABLED=false` to disable and always use the configured `daily_limit`.
 - The global `DAILY_SEND_CAP` (default 500) is checked before any sends happen in a tick.
+- **Domain reputation**: the Accounts page checks each connected account's sending domain against SURBL and
+  URIBL (cached 24h, "Recheck" to force). Deliberately excludes Spamhaus's DBL/ZEN - hand-verified that Spamhaus
+  silently returns "not listed" for queries from public/shared DNS resolvers (the kind a serverless platform
+  like Vercel uses) rather than a real answer, so including it would show a false "Clean" status. See Google
+  Postmaster Tools above for a more authoritative check.
 
 ## Local development
 

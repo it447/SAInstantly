@@ -31,6 +31,7 @@ ROUTES = {
     ("GET", "/api/accounts/connect"): accounts.connect,
     ("GET", "/api/accounts/callback"): accounts.callback,
     ("GET", "/api/accounts/list"): accounts.list_accounts,
+    ("GET", "/api/accounts/blocklist_status"): accounts.blocklist_status,
     ("POST", "/api/accounts/update"): accounts.update,
     ("POST", "/api/accounts/disconnect"): accounts.disconnect,
     ("GET", "/api/sequences/list"): sequences.list_sequences,

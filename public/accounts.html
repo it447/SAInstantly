@@ -32,6 +32,16 @@
       </table>
       <div class="empty" id="accounts-empty" style="display:none">No accounts connected yet.</div>
     </div>
+
+    <div class="card section" style="margin-top:1.5rem">
+      <div class="row" style="align-items:center; justify-content:space-between; margin-bottom:0.5rem">
+        <h2 style="margin:0">Domain reputation</h2>
+        <button class="btn secondary" id="recheck-blocklist-btn">Recheck</button>
+      </div>
+      <p class="muted" style="font-size:0.85rem">Checks each connected account's sending domain against public
+        domain blocklists (Spamhaus DBL, SURBL, URIBL). Cached for 24h.</p>
+      <div id="blocklist-status"></div>
+    </div>
     </div>
     </main>
   </div>
@@ -72,6 +82,7 @@
       body.innerHTML = "";
       if (accounts.length === 0) {
         document.getElementById("accounts-empty").style.display = "block";
+        document.getElementById("blocklist-status").innerHTML = '<div class="empty">Connect an account first.</div>';
         return;
       }
       accounts.forEach((a) => {
@@ -105,7 +116,39 @@
           load();
         });
       });
+
+      await loadBlocklistStatus(false);
     }
+
+    async function loadBlocklistStatus(refresh) {
+      const el = document.getElementById("blocklist-status");
+      el.innerHTML = '<div class="muted">Checking…</div>';
+      try {
+        const { domains } = await api(`/api/accounts/blocklist_status${refresh ? "?refresh=1" : ""}`);
+        if (domains.length === 0) {
+          el.innerHTML = '<div class="empty">No connected accounts to check.</div>';
+          return;
+        }
+        el.innerHTML = domains
+          .map((d) => {
+            const badge = d.listed
+              ? '<span class="badge failed">Listed</span>'
+              : '<span class="badge active">Clean</span>';
+            const listedOn = d.results.filter((r) => r.listed).map((r) => r.list).join(", ");
+            return `
+              <div style="padding:0.5rem 0; border-bottom:1px solid var(--border)">
+                <strong>${escapeHtml(d.domain)}</strong> ${badge}
+                ${listedOn ? `<div class="muted" style="font-size:0.8rem">Listed on: ${escapeHtml(listedOn)}</div>` : ""}
+                <div class="muted" style="font-size:0.75rem">Checked ${fmtDate(d.checked_at)}</div>
+              </div>`;
+          })
+          .join("");
+      } catch (err) {
+        el.innerHTML = `<div class="error">${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    document.getElementById("recheck-blocklist-btn").addEventListener("click", () => loadBlocklistStatus(true));
 
     load().catch((err) => {
       if (err.message !== "unauthorized") console.error(err);
