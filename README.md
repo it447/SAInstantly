@@ -92,7 +92,33 @@ renaming is needed either way.
    "Testing" publishing status, add every Gmail address you plan to connect as a test user.
 5. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`.
 
-### 3. HubSpot
+### 3. Deliverability: DKIM / SPF / DMARC
+
+This tool sends through the **Gmail API** using your own connected Gmail/Workspace accounts - every email is
+physically routed through Google's mail servers, not a dedicated IP this app controls. That means the hard
+parts of sender authentication are Google's problem, not this codebase's: there's no SMTP server or IP
+reputation for this app to manage. But Google only signs/authenticates mail correctly if the sending domain
+is configured for it, and that configuration lives in Google Workspace admin + your domain's DNS - outside
+anything this app's code can reach or set on your behalf. One-time setup, per sending domain (e.g.
+`thescalearmy.com`), done by whoever administers that domain's Google Workspace and DNS:
+
+1. **DKIM** - Google Workspace Admin Console → Apps → Google Workspace → Gmail → Authenticate email → generate
+   a DKIM key for the domain, add the resulting DKIM TXT record to DNS, then come back and click "Start
+   authentication" once DNS has propagated.
+2. **SPF** - add (or update) a DNS TXT record on the domain: `v=spf1 include:_spf.google.com ~all`. Only one
+   SPF record is allowed per domain - if one already exists, merge the `include` into it rather than adding a
+   second record.
+3. **DMARC** - add a DNS TXT record at `_dmarc.<yourdomain>`, e.g. `v=DMARC1; p=none; rua=mailto:you@yourdomain.com`.
+   Start at `p=none` (monitor-only) so you see DMARC reports without risking mail getting rejected, then
+   tighten to `p=quarantine` once you've confirmed SPF/DKIM are passing consistently.
+4. Verify all three with a tool like [MXToolbox](https://mxtoolbox.com/SuperTool.aspx) or by sending a real
+   test email to [mail-tester.com](https://www.mail-tester.com) and checking the SPF/DKIM/DMARC lines in the
+   report.
+
+Do this once per sending domain before connecting mailboxes on it — it protects deliverability for every
+mailbox on that domain, not just the ones this app sends from.
+
+### 4. HubSpot
 
 Create a private app in HubSpot with the `contacts` scope, and set its access token as the `HUBSPOT_API_KEY`
 environment variable in Vercel. That's the only place it's configured — it's never entered through the UI or
@@ -104,13 +130,13 @@ v3 CRM Lists API — v3 Lists can require scopes or plan tiers that aren't avail
 while v1 has been broadly available for years. The merge-tag property picker still uses the standard v3
 properties-schema endpoint, which is unrelated to the Lists API and unaffected by this.
 
-### 4. Environment variables
+### 5. Environment variables
 
 See `.env.example`. Required: `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`,
 `APP_PASSWORD`, `APP_BASE_URL`, `GOOGLE_CLIENT_ID`,
 `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `CRON_SECRET`.
 
-### 5. Deploy to Vercel
+### 6. Deploy to Vercel
 
 ```
 vercel deploy
@@ -130,9 +156,13 @@ scheduler (e.g. cron-job.org) with the `Authorization: Bearer $CRON_SECRET` head
   batch enrollment (e.g. a big HubSpot list import) trickles out over many ticks instead
   of bursting.
 - Account selection picks whichever connected account has the most daily capacity left
-  (`daily_limit - stats:sent:{account_id}:{date}`), rotating sends across accounts. Each sequence can
-  optionally be scoped to specific connected accounts (a checklist in the sequence editor) - leaving none
+  (`effective_daily_limit - stats:sent:{account_id}:{date}`), rotating sends across accounts. Each sequence
+  can optionally be scoped to specific connected accounts (a checklist in the sequence editor) - leaving none
   checked keeps the default of rotating across every connected account.
+- **Warm-up**: a newly-connected account's `effective_daily_limit` ramps linearly from `WARMUP_START_LIMIT`
+  (default 10/day) up to its configured `daily_limit` over `WARMUP_DAYS` (default 14) days since it was
+  connected, instead of sending at full volume from day one. The Accounts page shows a "Ramping (N/day)" badge
+  while this is in effect. Set `WARMUP_ENABLED=false` to disable and always use the configured `daily_limit`.
 - The global `DAILY_SEND_CAP` (default 500) is checked before any sends happen in a tick.
 
 ## Local development

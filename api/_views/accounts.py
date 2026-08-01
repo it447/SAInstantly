@@ -1,6 +1,6 @@
 import time
 
-from _lib import models
+from _lib import deliverability, models
 from _lib.auth import is_authenticated, require_auth
 from _lib.gmail import build_auth_url, exchange_code, get_user_email
 from _lib.redis_client import get_redis
@@ -85,12 +85,16 @@ def callback(self):
 
 def _public_account(account):
     date_str = today_str_local()
+    daily_limit = account.get("daily_limit", 50)
+    effective_limit = deliverability.effective_daily_limit(account)
     return {
         "id": account["id"],
         "email": account["email"],
         "provider": account.get("provider", "gmail"),
         "status": account.get("status", "connected"),
-        "daily_limit": account.get("daily_limit", 50),
+        "daily_limit": daily_limit,
+        "effective_daily_limit": effective_limit,
+        "warming_up": effective_limit < daily_limit,
         "sent_today": models.daily_sent_for_account(account["id"], date_str),
         "connected_at": account.get("connected_at"),
     }

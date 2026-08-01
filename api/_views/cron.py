@@ -1,7 +1,7 @@
 import random
 import time
 
-from _lib import enrollment, gmail, hubspot_client, models
+from _lib import deliverability, enrollment, gmail, hubspot_client, models
 from _lib.auth import require_cron_auth
 from _lib.utils import now_local, render_merge_tags, send_window_hours, sequence_merge_tag_properties
 
@@ -77,7 +77,10 @@ def _run_send():
 
     accounts = models.list_accounts()
     remaining_by_account = {
-        acc["id"]: acc.get("daily_limit", 0) - models.daily_sent_for_account(acc["id"])
+        # Ramps a newly-connected account's effective cap up gradually
+        # instead of letting it send at its full configured daily_limit
+        # from day one - see deliverability.effective_daily_limit.
+        acc["id"]: deliverability.effective_daily_limit(acc) - models.daily_sent_for_account(acc["id"])
         for acc in accounts
         if acc.get("status") == "connected"
     }

@@ -26,7 +26,7 @@
       <h2>Accounts</h2>
       <table>
         <thead>
-          <tr><th>Email</th><th>Status</th><th>Sent today</th><th>Daily limit</th><th></th></tr>
+          <tr><th>Email</th><th>Status</th><th>Sent today</th><th>Daily limit</th><th>Warm-up</th><th></th></tr>
         </thead>
         <tbody id="accounts-body"></tbody>
       </table>
@@ -76,11 +76,15 @@
       }
       accounts.forEach((a) => {
         const tr = document.createElement("tr");
+        const warmupCell = a.warming_up
+          ? `<span class="badge replied" title="Ramping up gradually since this account was connected">Ramping (${a.effective_daily_limit}/day)</span>`
+          : `<span class="muted">Full speed</span>`;
         tr.innerHTML = `
           <td>${escapeHtml(a.email)}</td>
           <td><span class="badge ${a.status}">${escapeHtml(a.status)}</span></td>
           <td>${a.sent_today}</td>
           <td><input type="number" min="0" value="${a.daily_limit}" data-id="${a.id}" class="limit-input" style="width:90px"></td>
+          <td>${warmupCell}</td>
           <td><button class="btn secondary disconnect-btn" data-id="${a.id}" ${a.status !== "connected" ? "disabled" : ""}>Disconnect</button></td>`;
         body.appendChild(tr);
       });
