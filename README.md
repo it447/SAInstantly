@@ -183,6 +183,24 @@ scheduler (e.g. cron-job.org) with the `Authorization: Bearer $CRON_SECRET` head
   like Vercel uses) rather than a real answer, so including it would show a false "Clean" status. See Google
   Postmaster Tools above for a more authoritative check.
 
+## Deliverability: deliberately not built
+
+Two Instantly-style features were considered and left out on purpose, not overlooked:
+
+- **Open/click tracking** - would require switching every email from plain text to HTML (a tracking pixel or
+  rewritten link doesn't exist in plain text), which cuts directly against the plain-text, no-link approach
+  this tool already uses for deliverability. Tracking pixels are also an increasingly unreliable signal (Apple
+  Mail Privacy Protection and Gmail's own image proxy both prefetch images regardless of whether a human opened
+  the email) and are a common spam-filter trigger in their own right - a bad trade for a domain that's still
+  building sending reputation.
+- **Full mailbox warm-up** (automated send/open/reply traffic across a network of seed mailboxes, the way
+  Instantly/Mailreach/Warmup Inbox do it) - this only works if it's plugged into many real mailboxes across
+  many real providers, so the receiving side's spam filters see genuine, varied engagement. A handful of this
+  team's own connected accounts emailing each other wouldn't produce that signal - it would just be internal
+  traffic, giving false confidence without the real effect. The daily-limit ramp-up above covers the practical
+  benefit a small in-house tool can actually deliver; for the full effect, connect accounts through a dedicated
+  warm-up service *before* connecting them here, rather than building a fake warm-up network in this app.
+
 ## Local development
 
 Vercel's Python functions run one-per-file under `api/`. Use `vercel dev` to run the
