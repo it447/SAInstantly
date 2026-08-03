@@ -58,10 +58,14 @@
       } else {
         stats.sequences.forEach((s) => {
           const tr = document.createElement("tr");
+          tr.setAttribute("data-clickable", "");
           tr.innerHTML = `
-            <td><a href="/sequence.html?id=${encodeURIComponent(s.id)}">${escapeHtml(s.name)}</a></td>
+            <td>${escapeHtml(s.name)}</td>
             <td><span class="badge ${s.status}">${escapeHtml(s.status)}</span></td>
             <td>${s.steps}</td>`;
+          tr.addEventListener("click", () => {
+            window.location.href = `/sequence.html?id=${encodeURIComponent(s.id)}`;
+          });
           tbody.appendChild(tr);
         });
       }
