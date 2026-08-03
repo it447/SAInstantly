@@ -23,10 +23,13 @@
     </div>
 
     <div class="card">
-      <h2>Accounts</h2>
+      <div class="row" style="align-items:center; justify-content:space-between; margin-bottom:0.5rem">
+        <h2 style="margin:0">Accounts</h2>
+        <button class="btn secondary" id="recheck-health-btn" style="flex:0; white-space:nowrap">Recheck health</button>
+      </div>
       <table>
         <thead>
-          <tr><th>Email</th><th>Status</th><th>Sent today</th><th>Daily limit</th><th>Warm-up</th><th></th></tr>
+          <tr><th>Email</th><th>Status</th><th>Health</th><th>Sent today</th><th>Daily limit</th><th>Warm-up</th><th></th></tr>
         </thead>
         <tbody id="accounts-body"></tbody>
       </table>
@@ -36,7 +39,7 @@
     <div class="card section" style="margin-top:1.5rem">
       <div class="row" style="align-items:center; justify-content:space-between; margin-bottom:0.5rem">
         <h2 style="margin:0">Domain reputation</h2>
-        <button class="btn secondary" id="recheck-blocklist-btn">Recheck</button>
+        <button class="btn secondary" id="recheck-blocklist-btn" style="flex:0; white-space:nowrap">Recheck</button>
       </div>
       <p class="muted" style="font-size:0.85rem">Checks each connected account's sending domain against public
         domain blocklists (Spamhaus DBL, SURBL, URIBL). Cached for 24h.</p>
@@ -69,15 +72,30 @@
       }
     }
 
-    async function load() {
-      renderNav("/accounts.html");
-      showBanner();
-      // A plain <a href> navigation can't carry the X-Auth-Token header, so
-      // the connect link passes the token as a query param instead - built
-      // here rather than as a static href.
-      document.getElementById("connect-gmail-link").href =
-        `/api/accounts/connect?token=${encodeURIComponent(authToken())}`;
-      const { accounts } = await api("/api/accounts/list");
+    function healthBadgeClass(grade) {
+      if (grade === "Healthy") return "active";
+      if (grade === "Needs attention") return "replied";
+      return "unsubscribed";
+    }
+
+    function healthFactorsHtml(factors) {
+      return factors
+        .map((f) => {
+          const icon = f.ok === true ? "✓" : f.ok === false ? "✗" : "•";
+          const color = f.ok === true ? "var(--ok)" : f.ok === false ? "var(--danger)" : "var(--muted)";
+          return `<div style="font-size:0.85rem; padding:0.15rem 0"><span style="color:${color}">${icon}</span> ${escapeHtml(f.label)}</div>`;
+        })
+        .join("");
+    }
+
+    async function loadAccountsAndHealth(forceHealthRefresh) {
+      const [{ accounts }, healthData] = await Promise.all([
+        api("/api/accounts/list"),
+        api(`/api/accounts/health_status${forceHealthRefresh ? "?refresh=1" : ""}`).catch(() => ({ accounts: [] })),
+      ]);
+      const healthByAccountId = {};
+      (healthData.accounts || []).forEach((h) => (healthByAccountId[h.account_id] = h));
+
       const body = document.getElementById("accounts-body");
       body.innerHTML = "";
       if (accounts.length === 0) {
@@ -85,19 +103,37 @@
         document.getElementById("blocklist-status").innerHTML = '<div class="empty">Connect an account first.</div>';
         return;
       }
+      document.getElementById("accounts-empty").style.display = "none";
+
       accounts.forEach((a) => {
         const tr = document.createElement("tr");
         const warmupCell = a.warming_up
           ? `<span class="badge replied" title="Ramping up gradually since this account was connected">Ramping (${a.effective_daily_limit}/day)</span>`
           : `<span class="muted">Full speed</span>`;
+        const health = healthByAccountId[a.id];
+        const healthCell = health
+          ? `<span class="badge ${healthBadgeClass(health.grade)}">${health.score}/100 · ${escapeHtml(health.grade)}</span>`
+          : `<span class="muted">—</span>`;
         tr.innerHTML = `
           <td>${escapeHtml(a.email)}</td>
           <td><span class="badge ${a.status}">${escapeHtml(a.status)}</span></td>
+          <td>${health ? `<span data-clickable style="display:inline-block">${healthCell}</span>` : healthCell}</td>
           <td>${a.sent_today}</td>
           <td><input type="number" min="0" value="${a.daily_limit}" data-id="${a.id}" class="limit-input" style="width:90px"></td>
           <td>${warmupCell}</td>
           <td><button class="btn secondary disconnect-btn" data-id="${a.id}" ${a.status !== "connected" ? "disabled" : ""}>Disconnect</button></td>`;
         body.appendChild(tr);
+
+        if (health) {
+          const detailRow = document.createElement("tr");
+          detailRow.style.display = "none";
+          detailRow.innerHTML = `<td colspan="7" style="background:rgba(0,0,0,0.08)">${healthFactorsHtml(health.factors)}</td>`;
+          body.appendChild(detailRow);
+
+          tr.querySelector("[data-clickable]").addEventListener("click", () => {
+            detailRow.style.display = detailRow.style.display === "none" ? "table-row" : "none";
+          });
+        }
       });
 
       document.querySelectorAll(".limit-input").forEach((input) => {
@@ -116,7 +152,19 @@
           load();
         });
       });
+    }
 
+    document.getElementById("recheck-health-btn").addEventListener("click", () => loadAccountsAndHealth(true));
+
+    async function load() {
+      renderNav("/accounts.html");
+      showBanner();
+      // A plain <a href> navigation can't carry the X-Auth-Token header, so
+      // the connect link passes the token as a query param instead - built
+      // here rather than as a static href.
+      document.getElementById("connect-gmail-link").href =
+        `/api/accounts/connect?token=${encodeURIComponent(authToken())}`;
+      await loadAccountsAndHealth(false);
       await loadBlocklistStatus(false);
     }
 

@@ -1,9 +1,12 @@
 """Deliverability helpers: gradual daily-limit ramp-up for newly connected
-accounts, and domain blocklist checks (this module will grow to cover
-bounce detection too)."""
+accounts, domain blocklist checks, SPF/DKIM/DMARC presence checks, and the
+composite per-account health score built from all of it."""
 import os
+import re
 import socket
 from datetime import datetime, timezone
+
+import dns.resolver
 
 
 def warmup_enabled():
@@ -102,3 +105,127 @@ def check_domain_blocklists(domain, timeout_seconds=5):
         return results
     finally:
         socket.setdefaulttimeout(old_timeout)
+
+
+# --------------------------------------------------------------- SPF/DKIM/DMARC
+
+DKIM_SELECTOR = "google"  # Google Workspace's default selector name
+
+
+def _txt_records(name, timeout_seconds=6, tries=2):
+    """Returns a list of TXT record strings, [] if the name genuinely has no
+    such record (NXDOMAIN), or None if the lookup itself failed/timed out
+    (meaning "couldn't determine" - not the same as "confirmed absent")."""
+    for _ in range(tries):
+        try:
+            answers = dns.resolver.resolve(name, "TXT", lifetime=timeout_seconds)
+            return ["".join(part.decode() if isinstance(part, bytes) else part for part in rec.strings) for rec in answers]
+        except dns.resolver.NXDOMAIN:
+            return []
+        except Exception:
+            continue
+    return None
+
+
+def _dkim_key_present(txt_value):
+    """A DKIM TXT record with an empty p= value (e.g. "v=DKIM1; p=") means the
+    key was explicitly revoked/retired, not that DKIM is actively working -
+    confirmed by hand against example.com, which publishes exactly this as a
+    placeholder. Only a non-empty p= counts as configured."""
+    match = re.search(r"p=([^;]*)", txt_value, re.IGNORECASE)
+    return bool(match and match.group(1).strip())
+
+
+def check_domain_auth(domain):
+    """Best-effort SPF/DKIM/DMARC presence check via real DNS TXT lookups
+    (dnspython - plain socket only supports A records). DKIM only checks
+    Google Workspace's default "google" selector, since a selector name
+    isn't discoverable without knowing it - a custom selector would show as
+    not-found even if DKIM is genuinely configured under a different name,
+    so treat dkim=False as "couldn't confirm" rather than definitive proof
+    it's missing."""
+    domain = (domain or "").strip().lower()
+
+    spf_records = _txt_records(domain)
+    dkim_records = _txt_records(f"{DKIM_SELECTOR}._domainkey.{domain}")
+    dmarc_records = _txt_records(f"_dmarc.{domain}")
+
+    spf = spf_records is not None and any(r.lower().startswith("v=spf1") for r in spf_records)
+    dkim = dkim_records is not None and any(
+        "v=dkim1" in r.lower() and _dkim_key_present(r) for r in dkim_records
+    )
+    dmarc = dmarc_records is not None and any(r.lower().replace(" ", "").startswith("v=dmarc1") for r in dmarc_records)
+
+    return {
+        "spf": spf,
+        "spf_checked": spf_records is not None,
+        "dkim": dkim,
+        "dkim_checked": dkim_records is not None,
+        "dmarc": dmarc,
+        "dmarc_checked": dmarc_records is not None,
+    }
+
+
+# ------------------------------------------------------------ health score
+
+def account_health_score(domain_auth, domain_listed, bounce_rate, warming_up):
+    """Composite 0-100 health score for one connected account, combining
+    domain authentication (SPF/DKIM/DMARC), domain blocklist status, this
+    account's own bounce rate, and warm-up progress. Deliberately
+    transparent (not a black-box number) - `factors` lists exactly what
+    contributed and why, each tagged ok=True/False/None (None = neutral/
+    informational, not a pass or fail)."""
+    score = 0
+    factors = []
+
+    if domain_auth.get("spf"):
+        score += 15
+        factors.append({"label": "SPF configured", "ok": True})
+    else:
+        factors.append({"label": "SPF record not found", "ok": False})
+
+    if domain_auth.get("dkim"):
+        score += 15
+        factors.append({"label": "DKIM configured", "ok": True})
+    else:
+        factors.append({"label": "DKIM not found (only checks Google Workspace's default selector)", "ok": False})
+
+    if domain_auth.get("dmarc"):
+        score += 10
+        factors.append({"label": "DMARC configured", "ok": True})
+    else:
+        factors.append({"label": "DMARC record not found", "ok": False})
+
+    if not domain_listed:
+        score += 20
+        factors.append({"label": "Domain not on SURBL/URIBL", "ok": True})
+    else:
+        factors.append({"label": "Domain listed on a blocklist", "ok": False})
+
+    if bounce_rate is None:
+        score += 30
+        factors.append({"label": "Not enough sends yet to measure bounce rate", "ok": None})
+    elif bounce_rate < 0.02:
+        score += 30
+        factors.append({"label": f"Bounce rate {bounce_rate * 100:.1f}%", "ok": True})
+    elif bounce_rate < 0.05:
+        score += 15
+        factors.append({"label": f"Bounce rate {bounce_rate * 100:.1f}% (elevated)", "ok": None})
+    else:
+        factors.append({"label": f"Bounce rate {bounce_rate * 100:.1f}% (high)", "ok": False})
+
+    if not warming_up:
+        score += 10
+        factors.append({"label": "Fully ramped up", "ok": True})
+    else:
+        score += 5
+        factors.append({"label": "Still in warm-up ramp", "ok": None})
+
+    if score >= 80:
+        grade = "Healthy"
+    elif score >= 50:
+        grade = "Needs attention"
+    else:
+        grade = "At risk"
+
+    return {"score": score, "grade": grade, "factors": factors}

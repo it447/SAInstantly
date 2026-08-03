@@ -321,7 +321,7 @@ def _run_poll_bounces():
                 continue
 
             enrollment.stop_sequence(enr, "bounced", reason="hard bounce detected")
-            models.record_bounce_stat()
+            models.record_bounce_stat(account["id"])
             bounced.append(bounced_email)
 
     return {"ok": True, "checked": checked, "bounced": bounced}

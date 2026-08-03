@@ -75,10 +75,12 @@ public/            static vanilla JS/HTML/CSS frontend
 | `sequence_contacts:{sequence_id}` | set | every email ever enrolled in that sequence, powers the sequence detail page |
 | `bounce_seen:{account_id}` | set | bounce-notification message IDs already checked for that account, so the same one isn't reprocessed every tick |
 | `blocklist_check:{domain}` | string | cached `{results, checked_at}` from the last domain blocklist check, TTL 24h |
+| `domain_auth_check:{domain}` | string | cached `{result, checked_at}` from the last SPF/DKIM/DMARC check, TTL 24h |
 | `hubspot:config` | string | json `{mappings: [{list_id, list_name, sequence_id, sequence_name}]}` — the API key is never stored here, only `HUBSPOT_API_KEY` |
 | `hubspot:seen:{list_id}` | set | HubSpot contact IDs already scanned for that list |
 | `oauth:state:{state}` | string | CSRF state for the Gmail OAuth flow, TTL 10 min |
 | `stats:sent:{date}` / `stats:sent:{account_id}:{date}` | string | daily send counters (global + per account) |
+| `stats:sent_total:{account_id}` / `stats:bounces_total:{account_id}` | string | lifetime per-account counters, used for the health score's bounce rate |
 | `stats:enrolled_total`, `stats:active_enrollments`, `stats:replies:{date}`, `stats:replies_total`, `stats:bounces:{date}`, `stats:bounces_total`, `stats:unsubscribes:{date}`, `stats:unsubscribes_total` | string | dashboard counters |
 
 ## Setup
@@ -184,6 +186,14 @@ scheduler (e.g. cron-job.org) with the `Authorization: Bearer $CRON_SECRET` head
   silently returns "not listed" for queries from public/shared DNS resolvers (the kind a serverless platform
   like Vercel uses) rather than a real answer, so including it would show a false "Clean" status. See Google
   Postmaster Tools above for a more authoritative check.
+- **Health score**: each connected account gets a transparent 0-100 score (click it to see exactly what
+  contributed) combining real DNS checks for SPF/DKIM/DMARC on its sending domain, that domain's blocklist
+  status, this account's own bounce rate (needs at least 10 sends before it's judged - no data isn't treated as
+  bad data), and warm-up progress. DKIM detection only recognizes Google Workspace's default `google` selector,
+  since a custom selector name isn't discoverable - a "DKIM not found" result there means "couldn't confirm,"
+  not certain proof it's missing. Domain-level checks (auth + blocklist) are shared and cached across every
+  account on the same domain; account-level stats (bounce rate, warm-up) are computed live from Redis, no
+  network calls. `GET /api/accounts/health_status`, `?refresh=1` to force fresh domain checks.
 
 ## Deliverability: deliberately not built
 

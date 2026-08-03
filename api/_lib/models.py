@@ -150,6 +150,7 @@ def record_send_stat(account_id):
     date_str = today_str_local()
     incr_stat(f"stats:sent:{date_str}")
     incr_stat(f"stats:sent:{account_id}:{date_str}")
+    incr_stat(f"stats:sent_total:{account_id}")
 
 
 def record_reply_stat():
@@ -162,9 +163,11 @@ def record_unsubscribe_stat():
     incr_stat("stats:unsubscribes_total")
 
 
-def record_bounce_stat():
+def record_bounce_stat(account_id=None):
     incr_stat(f"stats:bounces:{today_str_local()}")
     incr_stat("stats:bounces_total")
+    if account_id:
+        incr_stat(f"stats:bounces_total:{account_id}")
 
 
 def bounce_message_seen(account_id, message_id):
@@ -219,3 +222,15 @@ def save_blocklist_check(domain, results, checked_at):
     r = get_redis()
     payload = json.dumps({"results": results, "checked_at": checked_at})
     r.set(f"blocklist_check:{domain.strip().lower()}", payload, ex=BLOCKLIST_CACHE_TTL_SECONDS)
+
+
+def get_cached_domain_auth(domain):
+    r = get_redis()
+    raw = r.get(f"domain_auth_check:{domain.strip().lower()}")
+    return json.loads(raw) if raw else None
+
+
+def save_domain_auth_check(domain, result, checked_at):
+    r = get_redis()
+    payload = json.dumps({"result": result, "checked_at": checked_at})
+    r.set(f"domain_auth_check:{domain.strip().lower()}", payload, ex=BLOCKLIST_CACHE_TTL_SECONDS)

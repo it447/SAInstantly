@@ -137,6 +137,68 @@ def blocklist_status(self):
     self._send_json(200, {"domains": out})
 
 
+MIN_SENDS_FOR_BOUNCE_RATE = 10
+
+
+def health_status(self):
+    """A composite 0-100 health score per connected account (SPF/DKIM/DMARC,
+    domain blocklist status, this account's own bounce rate, warm-up
+    progress). Domain-level checks (auth + blocklist) are cached 24h per
+    domain and shared across every account on that domain; bounce
+    rate/warm-up are computed live from Redis stats each time (cheap, no
+    network calls). Pass ?refresh=1 to force fresh domain checks."""
+    if not require_auth(self):
+        return
+
+    force_refresh = self._query().get("refresh", ["0"])[0] == "1"
+    accounts = [a for a in models.list_accounts() if a.get("status") == "connected"]
+
+    domain_cache = {}
+    out = []
+    for account in accounts:
+        email = account.get("email", "")
+        if "@" not in email:
+            continue
+        domain = email.split("@", 1)[1]
+
+        if domain not in domain_cache:
+            auth_cached = None if force_refresh else models.get_cached_domain_auth(domain)
+            if auth_cached is None:
+                auth_result = deliverability.check_domain_auth(domain)
+                models.save_domain_auth_check(domain, auth_result, now_utc().isoformat())
+            else:
+                auth_result = auth_cached["result"]
+
+            bl_cached = None if force_refresh else models.get_cached_blocklist_check(domain)
+            if bl_cached is None:
+                bl_results = deliverability.check_domain_blocklists(domain)
+                models.save_blocklist_check(domain, bl_results, now_utc().isoformat())
+            else:
+                bl_results = bl_cached["results"]
+
+            domain_cache[domain] = {"auth": auth_result, "listed": any(r.get("listed") for r in bl_results)}
+
+        domain_info = domain_cache[domain]
+
+        sent_total = models.get_stat(f"stats:sent_total:{account['id']}")
+        bounces_total = models.get_stat(f"stats:bounces_total:{account['id']}")
+        bounce_rate = (bounces_total / sent_total) if sent_total >= MIN_SENDS_FOR_BOUNCE_RATE else None
+
+        configured_limit = max(int(account.get("daily_limit", 0)), 0)
+        warming_up = deliverability.effective_daily_limit(account) < configured_limit
+
+        health = deliverability.account_health_score(domain_info["auth"], domain_info["listed"], bounce_rate, warming_up)
+
+        out.append({
+            "account_id": account["id"],
+            "email": email,
+            "domain": domain,
+            **health,
+        })
+
+    self._send_json(200, {"accounts": out})
+
+
 def update(self):
     if not require_auth(self):
         return
