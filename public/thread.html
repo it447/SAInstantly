@@ -22,43 +22,61 @@
       <div id="messages"></div>
       <div class="empty" id="empty" style="display:none"></div>
     </div>
+
+    <div class="section card" id="reply-card" style="display:none; margin-top:1.5rem">
+      <h2>Reply</h2>
+      <div class="field">
+        <textarea id="reply-body" placeholder="Type your reply…" rows="6"></textarea>
+      </div>
+      <button class="btn" id="send-reply-btn">Send reply</button>
+      <div class="error" id="reply-error" style="display:none"></div>
+      <div class="success" id="reply-success" style="display:none"></div>
+    </div>
     </div>
     </main>
   </div>
 
   <script src="/js/api.js"></script>
   <script>
+    let contactEmail = null;
+    let sequenceId = null;
+
     async function load() {
       renderNav("");
       const params = new URLSearchParams(window.location.search);
-      const email = params.get("email");
-      const sequenceId = params.get("sequence_id");
+      contactEmail = params.get("email");
+      sequenceId = params.get("sequence_id");
       document.getElementById("back-link").href = `/sequence.html?id=${encodeURIComponent(sequenceId || "")}`;
 
-      if (!email || !sequenceId) {
+      if (!contactEmail || !sequenceId) {
         document.getElementById("title").textContent = "No contact specified";
         return;
       }
-      document.getElementById("title").textContent = email;
+      document.getElementById("title").textContent = contactEmail;
 
       const { messages, note, error } = await api(
-        `/api/sequences/thread?email=${encodeURIComponent(email)}&sequence_id=${encodeURIComponent(sequenceId)}`
+        `/api/sequences/thread?email=${encodeURIComponent(contactEmail)}&sequence_id=${encodeURIComponent(sequenceId)}`
       );
 
       const container = document.getElementById("messages");
       const empty = document.getElementById("empty");
+      const replyCard = document.getElementById("reply-card");
 
       if (error) {
         empty.textContent = error;
         empty.style.display = "block";
+        replyCard.style.display = "none";
         return;
       }
       if (!messages || messages.length === 0) {
         empty.textContent = note || "No messages yet.";
         empty.style.display = "block";
+        replyCard.style.display = "none";
         return;
       }
 
+      empty.style.display = "none";
+      replyCard.style.display = "block";
       container.innerHTML = messages
         .map(
           (m) => `
@@ -73,6 +91,35 @@
         )
         .join("");
     }
+
+    document.getElementById("send-reply-btn").addEventListener("click", async () => {
+      const errorEl = document.getElementById("reply-error");
+      const successEl = document.getElementById("reply-success");
+      const textarea = document.getElementById("reply-body");
+      const btn = document.getElementById("send-reply-btn");
+      errorEl.style.display = "none";
+      successEl.style.display = "none";
+
+      const text = textarea.value.trim();
+      if (!text) return;
+
+      btn.disabled = true;
+      try {
+        await api("/api/sequences/reply", {
+          method: "POST",
+          body: { email: contactEmail, sequence_id: sequenceId, body: text },
+        });
+        textarea.value = "";
+        successEl.textContent = "Reply sent.";
+        successEl.style.display = "block";
+        await load();
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.style.display = "block";
+      } finally {
+        btn.disabled = false;
+      }
+    });
 
     load().catch((err) => {
       if (err.message !== "unauthorized") {

@@ -230,3 +230,87 @@ def thread(self):
         )
 
     self._send_json(200, {"messages": messages})
+
+
+def reply(self):
+    """Send a manual, one-off reply to a contact from the conversation view -
+    independent of the sequence's automated status (the sequence may already
+    be stopped/completed for this contact; that's fine, this is just a
+    regular reply, not a resumed sequence step)."""
+    if not require_auth(self):
+        return
+
+    body = self._read_json_body()
+    email = (body.get("email") or "").strip().lower()
+    sequence_id = body.get("sequence_id")
+    reply_body = (body.get("body") or "").strip()
+
+    if not email or not sequence_id:
+        self._send_json(400, {"error": "email and sequence_id are required"})
+        return
+    if not reply_body:
+        self._send_json(400, {"error": "A message body is required"})
+        return
+
+    enr = models.get_enrollment(email)
+    if not enr or enr.get("sequence_id") != sequence_id:
+        self._send_json(404, {"error": "no enrollment found for this contact in this sequence"})
+        return
+    if not enr.get("thread_id") or not enr.get("account_id"):
+        self._send_json(400, {"error": "No email has been sent to this contact yet, so there's no thread to reply on."})
+        return
+
+    account = models.get_account(enr["account_id"])
+    if not account:
+        self._send_json(404, {"error": "The account this was sent from no longer exists."})
+        return
+
+    try:
+        access_token, refreshed = gmail.get_valid_access_token(account)
+        if refreshed:
+            account.update(refreshed)
+            models.save_account(account)
+
+        # Thread against the most recent message in the conversation
+        # (whichever side sent it), not enr["last_message_id"] - that field
+        # only tracks the last message *we* sent, which is stale as soon as
+        # the contact has replied since.
+        thread_data = gmail.get_thread_full(access_token, enr["thread_id"])
+        messages = thread_data.get("messages", [])
+        if not messages:
+            self._send_json(400, {"error": "This thread has no messages to reply to."})
+            return
+        latest_headers = {h["name"]: h["value"] for h in messages[-1].get("payload", {}).get("headers", [])}
+        latest_message_id = latest_headers.get("Message-ID")
+        subject = latest_headers.get("Subject") or "(no subject)"
+        if not subject.lower().startswith("re:"):
+            subject = f"Re: {subject}"
+
+        send_result = gmail.send_message(
+            access_token,
+            account["email"],
+            email,
+            subject,
+            reply_body,
+            thread_id=enr["thread_id"],
+            in_reply_to_message_id=latest_message_id,
+        )
+
+        new_message_id = None
+        try:
+            sent_msg = gmail.get_message(access_token, send_result["id"])
+            for header in sent_msg.get("payload", {}).get("headers", []):
+                if header.get("name") == "Message-ID":
+                    new_message_id = header.get("value")
+        except Exception:
+            pass
+
+        enr["last_message_id"] = new_message_id
+        enr["updated_at"] = now_utc().isoformat()
+        models.save_enrollment(enr)
+        models.append_log(sequence_id, {"type": "manual_reply", "email": email, "at": now_utc().isoformat()})
+    except Exception as exc:
+        self._send_json(502, {"error": f"Failed to send reply: {str(exc)[:300]}"})
+        return
+
+    self._send_json(200, {"ok": True})

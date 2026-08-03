@@ -25,7 +25,9 @@ Python/Vercel serverless functions + Upstash Redis + vanilla JS frontend.
   respects a global daily cap (default 500) and per-account daily limits
 - Per-sequence detail page (click a sequence from the dashboard) with roll-up stats (enrolled, active, sent,
   completed, replied, unsubscribed/failed) and a table of every enrolled contact's status and next send time.
-  Clicking a contact opens the actual Gmail thread — the email(s) sent and any replies, read straight from Gmail
+  Clicking a contact opens the actual Gmail thread — the email(s) sent and any replies, read straight from
+  Gmail, with a reply box to respond right there. Clicking a stat tile (Active/Completed/Replied/Bounced/
+  Unsubscribed+failed) filters the contacts table to just that bucket
 - Reply detection (cron every 30 min) that stops a contact's sequence automatically — this is also how
   opt-outs are handled: every email ends with a plain-text "Reply STOP to unsubscribe" line rather than a
   clickable link, and any reply (STOP or otherwise) stops that contact's sequence for good
