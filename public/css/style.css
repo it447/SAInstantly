@@ -124,6 +124,10 @@ h2 { font-size: 1.15rem; font-weight: 700; margin: 0 0 0.75rem; }
 .stat-tile { text-align: left; }
 .stat-tile .value { font-family: 'Playfair Display', serif; font-size: 36px; font-weight: 700; color: var(--cream); }
 .stat-tile .label { color: var(--muted); font-size: 0.85rem; margin-top: 0.15rem; }
+.stat-tile[data-filter] { cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+.stat-tile[data-filter]:hover { border-color: var(--border2); }
+.stat-tile[data-filter]:focus-visible { outline: 2px solid #ff6432; outline-offset: 2px; }
+.stat-tile[data-filter].selected { border-color: #ff6432; background: rgba(255,100,50,0.08); }
 
 .section { margin-bottom: 2rem; }
 

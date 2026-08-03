@@ -25,7 +25,10 @@
     <div class="grid stats" id="stats"></div>
 
     <div class="section card" style="margin-top:2rem">
-      <h2>Enrolled contacts</h2>
+      <div class="row" style="align-items:center; justify-content:space-between; margin-bottom:0.5rem">
+        <h2 style="margin:0">Enrolled contacts</h2>
+        <span class="muted" id="filter-label" style="font-size:0.85rem"></span>
+      </div>
       <table>
         <thead>
           <tr><th>Contact</th><th>Status</th><th>Step</th><th>Next send</th><th>Enrolled</th></tr>
@@ -40,9 +43,77 @@
 
   <script src="/js/api.js"></script>
   <script>
-    function statTile(value, label) {
-      return `<div class="card stat-tile"><div class="value">${value}</div><div class="label">${label}</div></div>`;
+    let allContacts = [];
+    let activeFilter = "all";
+    let sequenceId = null;
+
+    const FILTER_LABELS = {
+      all: "All contacts",
+      active: "Currently active",
+      completed: "Completed",
+      replied: "Replied",
+      bounced: "Bounced",
+      "unsubscribed,failed": "Unsubscribed / failed",
+    };
+
+    function statTile(value, label, filterKey) {
+      const clickable = filterKey != null;
+      const attrs = clickable ? ` data-filter="${escapeHtml(filterKey)}" tabindex="0" role="button"` : "";
+      return `<div class="card stat-tile"${attrs}><div class="value">${value}</div><div class="label">${label}</div></div>`;
     }
+
+    function renderContactsTable() {
+      const tbody = document.getElementById("contacts-body");
+      const empty = document.getElementById("contacts-empty");
+      const filterSet = activeFilter === "all" ? null : new Set(activeFilter.split(","));
+      const filtered = filterSet ? allContacts.filter((c) => filterSet.has(c.status)) : allContacts;
+
+      document.querySelectorAll(".stat-tile[data-filter]").forEach((tile) => {
+        tile.classList.toggle("selected", tile.dataset.filter === activeFilter);
+      });
+      document.getElementById("filter-label").textContent =
+        activeFilter === "all" ? "" : `Filtered: ${FILTER_LABELS[activeFilter] || activeFilter}`;
+
+      tbody.innerHTML = "";
+      if (filtered.length === 0) {
+        empty.textContent = activeFilter === "all" ? "No contacts enrolled yet." : "No contacts match this filter.";
+        empty.style.display = "block";
+        return;
+      }
+      empty.style.display = "none";
+      filtered.forEach((c) => {
+        const name = [c.firstname, c.lastname].filter(Boolean).join(" ");
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${escapeHtml(c.email)}${name ? `<div class="muted" style="font-size:0.8rem">${escapeHtml(name)}</div>` : ""}</td>
+          <td><span class="badge ${c.status}">${escapeHtml(c.status.replace(/_/g, " "))}</span></td>
+          <td>${c.step_index == null ? "—" : `Step ${c.step_index + 1}`}</td>
+          <td>${c.next_send_at ? fmtUnix(c.next_send_at) : "—"}</td>
+          <td>${fmtDate(c.enrolled_at)}</td>`;
+        if (c.status !== "moved_to_other_sequence") {
+          tr.setAttribute("data-clickable", "");
+          tr.addEventListener("click", () => {
+            window.location.href = `/thread.html?email=${encodeURIComponent(c.email)}&sequence_id=${encodeURIComponent(sequenceId)}`;
+          });
+        }
+        tbody.appendChild(tr);
+      });
+    }
+
+    document.getElementById("stats").addEventListener("click", (e) => {
+      const tile = e.target.closest(".stat-tile[data-filter]");
+      if (!tile) return;
+      activeFilter = tile.dataset.filter;
+      renderContactsTable();
+    });
+    document.getElementById("stats").addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      const tile = e.target.closest(".stat-tile[data-filter]");
+      if (!tile) return;
+      e.preventDefault();
+      activeFilter = tile.dataset.filter;
+      renderContactsTable();
+    });
 
     async function load() {
       renderNav("");
@@ -52,6 +123,7 @@
         document.getElementById("title").textContent = "No sequence specified";
         return;
       }
+      sequenceId = id;
 
       const { sequence, stats, contacts } = await api(`/api/sequences/detail?id=${encodeURIComponent(id)}`);
 
@@ -68,40 +140,18 @@
         : "Sending from: any connected account";
 
       document.getElementById("stats").innerHTML = [
-        statTile(stats.total, "Total enrolled"),
-        statTile(stats.active, "Currently active"),
+        statTile(stats.total, "Total enrolled", "all"),
+        statTile(stats.active, "Currently active", "active"),
         statTile(stats.sent, "Emails sent"),
-        statTile(stats.completed, "Completed"),
-        statTile(stats.replied, "Replied"),
-        statTile(stats.bounced, "Bounced"),
-        statTile(stats.unsubscribed + stats.failed, "Unsubscribed / failed"),
+        statTile(stats.completed, "Completed", "completed"),
+        statTile(stats.replied, "Replied", "replied"),
+        statTile(stats.bounced, "Bounced", "bounced"),
+        statTile(stats.unsubscribed + stats.failed, "Unsubscribed / failed", "unsubscribed,failed"),
       ].join("");
 
-      const tbody = document.getElementById("contacts-body");
-      const empty = document.getElementById("contacts-empty");
-      tbody.innerHTML = "";
-      if (contacts.length === 0) {
-        empty.style.display = "block";
-      } else {
-        empty.style.display = "none";
-        contacts.forEach((c) => {
-          const name = [c.firstname, c.lastname].filter(Boolean).join(" ");
-          const tr = document.createElement("tr");
-          tr.innerHTML = `
-            <td>${escapeHtml(c.email)}${name ? `<div class="muted" style="font-size:0.8rem">${escapeHtml(name)}</div>` : ""}</td>
-            <td><span class="badge ${c.status}">${escapeHtml(c.status.replace(/_/g, " "))}</span></td>
-            <td>${c.step_index == null ? "—" : `Step ${c.step_index + 1}`}</td>
-            <td>${c.next_send_at ? fmtUnix(c.next_send_at) : "—"}</td>
-            <td>${fmtDate(c.enrolled_at)}</td>`;
-          if (c.status !== "moved_to_other_sequence") {
-            tr.setAttribute("data-clickable", "");
-            tr.addEventListener("click", () => {
-              window.location.href = `/thread.html?email=${encodeURIComponent(c.email)}&sequence_id=${encodeURIComponent(sequence.id)}`;
-            });
-          }
-          tbody.appendChild(tr);
-        });
-      }
+      allContacts = contacts;
+      activeFilter = "all";
+      renderContactsTable();
     }
 
     load().catch((err) => {
