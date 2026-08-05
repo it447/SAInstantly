@@ -125,6 +125,81 @@ def get_logs(sequence_id, limit=100):
     return [json.loads(v) for v in raw]
 
 
+# ------------------------------------------------------------- suppression
+
+def is_suppressed(email):
+    r = get_redis()
+    raw = r.hget("suppression_list", email.strip().lower())
+    if not raw:
+        return False
+    return json.loads(raw).get("active", True)
+
+
+def add_to_suppression_list(email, reason, source=None):
+    """Adds an email to the global, cross-sequence suppression list - checked
+    before enrolling a contact into ANY sequence, so someone who unsubscribed
+    or hard-bounced on one campaign never gets re-enrolled by a later list
+    upload into a different one. Entries are never hard-deleted (see
+    remove_from_suppression_list) so there's always a record of when/why
+    someone was suppressed, even if a later manual action reverses it."""
+    r = get_redis()
+    email = email.strip().lower()
+    existing_raw = r.hget("suppression_list", email)
+    if existing_raw and json.loads(existing_raw).get("active", True):
+        return  # already suppressed - keep the original record, not this duplicate event
+    entry = {"reason": reason, "source": source, "added_at": now_utc().isoformat(), "active": True}
+    r.hset("suppression_list", email, json.dumps(entry))
+    append_suppression_audit({"email": email, "action": "added", "reason": reason, "source": source})
+
+
+def remove_from_suppression_list(email):
+    """Manually un-suppresses an email (e.g. an accidental add, or someone
+    who explicitly asks to be re-contacted). Marks the record inactive
+    rather than deleting it, preserving the history of when it was
+    suppressed and why - the audit trail Joel flagged as the highest-risk
+    surface to get right."""
+    r = get_redis()
+    email = email.strip().lower()
+    raw = r.hget("suppression_list", email)
+    if not raw:
+        return False
+    entry = json.loads(raw)
+    if not entry.get("active", True):
+        return False
+    entry["active"] = False
+    entry["removed_at"] = now_utc().isoformat()
+    r.hset("suppression_list", email, json.dumps(entry))
+    append_suppression_audit({"email": email, "action": "removed"})
+    return True
+
+
+def list_suppressed(active_only=True):
+    r = get_redis()
+    raw = r.hgetall("suppression_list") or {}
+    out = []
+    for email, value in raw.items():
+        entry = json.loads(value)
+        if active_only and not entry.get("active", True):
+            continue
+        entry["email"] = email
+        out.append(entry)
+    out.sort(key=lambda e: e.get("added_at") or "", reverse=True)
+    return out
+
+
+def append_suppression_audit(entry):
+    r = get_redis()
+    entry = dict(entry, at=now_utc().isoformat())
+    r.lpush("logs:suppression", json.dumps(entry))
+    r.ltrim("logs:suppression", 0, 999)
+
+
+def get_suppression_audit(limit=100):
+    r = get_redis()
+    raw = r.lrange("logs:suppression", 0, limit - 1) or []
+    return [json.loads(v) for v in raw]
+
+
 # -------------------------------------------------------------------- stats
 
 def incr_stat(key, amount=1):

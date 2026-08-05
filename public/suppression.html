@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Suppression list — Cold Email Sequencer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<script>document.body.classList.toggle('light-mode', localStorage.getItem('theme') === 'light');</script>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="main">
+    <div class="container">
+    <h1>Suppression list</h1>
+    <div class="orange-bar"></div>
+    <p class="muted" style="margin-top:-0.5rem">
+      Every email here is blocked from being enrolled in <strong>any</strong> sequence, regardless of which list
+      or HubSpot sync brings them in. Populated automatically from bounces and unsubscribes, or added manually
+      below (e.g. someone asks to be removed on a call).
+    </p>
+
+    <div class="card section">
+      <h2>Add manually</h2>
+      <div class="row" style="align-items:flex-end">
+        <div class="field" style="margin-bottom:0">
+          <label for="add-email">Email</label>
+          <input type="email" id="add-email" placeholder="someone@example.com">
+        </div>
+        <div class="field" style="margin-bottom:0">
+          <label for="add-reason">Reason</label>
+          <input type="text" id="add-reason" placeholder="e.g. asked to be removed on a call">
+        </div>
+        <button class="btn" id="add-btn" style="flex:0; white-space:nowrap">Add to list</button>
+      </div>
+      <div class="error" id="add-error" style="display:none"></div>
+      <div class="success" id="add-success" style="display:none"></div>
+    </div>
+
+    <div class="card">
+      <h2>Currently suppressed</h2>
+      <table>
+        <thead><tr><th>Email</th><th>Reason</th><th>Source</th><th>Added</th><th></th></tr></thead>
+        <tbody id="suppression-body"></tbody>
+      </table>
+      <div class="empty" id="suppression-empty" style="display:none">No one is currently suppressed.</div>
+    </div>
+
+    <div class="card section" style="margin-top:1.5rem">
+      <h2>Audit log</h2>
+      <p class="muted" style="font-size:0.85rem">Every add/remove event, kept even after an entry is removed.</p>
+      <table>
+        <thead><tr><th>Time</th><th>Action</th><th>Email</th><th>Reason</th></tr></thead>
+        <tbody id="audit-body"></tbody>
+      </table>
+      <div class="empty" id="audit-empty" style="display:none">No activity yet.</div>
+    </div>
+    </div>
+    </main>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    async function loadSuppressionList() {
+      const { suppressed } = await api("/api/suppression/list");
+      const body = document.getElementById("suppression-body");
+      const empty = document.getElementById("suppression-empty");
+      body.innerHTML = "";
+      if (suppressed.length === 0) {
+        empty.style.display = "block";
+        return;
+      }
+      empty.style.display = "none";
+      suppressed.forEach((s) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${escapeHtml(s.email)}</td>
+          <td>${escapeHtml(s.reason || "")}</td>
+          <td class="muted">${escapeHtml(s.source || "")}</td>
+          <td>${fmtDate(s.added_at)}</td>
+          <td><button class="btn secondary remove-btn" data-email="${escapeHtml(s.email)}">Remove</button></td>`;
+        body.appendChild(tr);
+      });
+      document.querySelectorAll(".remove-btn").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          if (!confirm(`Remove ${btn.dataset.email} from the suppression list? They could be enrolled again.`)) return;
+          await api("/api/suppression/remove", { method: "POST", body: { email: btn.dataset.email } });
+          await loadSuppressionList();
+          await loadAuditLog();
+        });
+      });
+    }
+
+    async function loadAuditLog() {
+      const { entries } = await api("/api/suppression/audit");
+      const body = document.getElementById("audit-body");
+      const empty = document.getElementById("audit-empty");
+      body.innerHTML = "";
+      if (entries.length === 0) {
+        empty.style.display = "block";
+        return;
+      }
+      empty.style.display = "none";
+      entries.forEach((e) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${fmtDate(e.at)}</td>
+          <td><span class="badge ${e.action === "added" ? "unsubscribed" : "active"}">${escapeHtml(e.action)}</span></td>
+          <td>${escapeHtml(e.email)}</td>
+          <td class="muted">${escapeHtml(e.reason || "")}</td>`;
+        body.appendChild(tr);
+      });
+    }
+
+    document.getElementById("add-btn").addEventListener("click", async () => {
+      const errorEl = document.getElementById("add-error");
+      const successEl = document.getElementById("add-success");
+      errorEl.style.display = "none";
+      successEl.style.display = "none";
+      const emailInput = document.getElementById("add-email");
+      const reasonInput = document.getElementById("add-reason");
+      const email = emailInput.value.trim();
+      if (!email) return;
+
+      try {
+        await api("/api/suppression/add", { method: "POST", body: { email, reason: reasonInput.value.trim() } });
+        emailInput.value = "";
+        reasonInput.value = "";
+        successEl.textContent = "Added.";
+        successEl.style.display = "block";
+        await loadSuppressionList();
+        await loadAuditLog();
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.style.display = "block";
+      }
+    });
+
+    async function load() {
+      renderNav("/suppression.html");
+      await Promise.all([loadSuppressionList(), loadAuditLog()]);
+    }
+
+    load().catch((err) => {
+      if (err.message !== "unauthorized") console.error(err);
+    });
+  </script>
+</body>
+</html>

@@ -36,6 +36,11 @@ Python/Vercel serverless functions + Upstash Redis + vanilla JS frontend.
   "delivery status notification"/"undelivered mail" subject) and confirms which contact it's about by matching
   a currently-active enrolled email address in the message text - skips ambiguous matches rather than guessing
 - Dashboard with active sequences, contacts enrolled, emails sent today, replies, bounces, unsubscribes
+- **Global suppression list** (`/suppression.html`): a bounce or unsubscribe on *any* sequence blocks that
+  email from ever being enrolled in *any other* sequence too, so a fresh list upload can't accidentally
+  re-contact someone who already opted out or hard-bounced. Add/remove manually for compliance-driven cases
+  (a phone request, a legal ask), with an audit log of every add/remove that's kept even after an entry is
+  removed. A plain reply (interested or not) doesn't suppress - only an explicit opt-out or a hard bounce does.
 
 Lead/contact data is never deleted — enrollments are only ever marked `completed`,
 `replied`, `bounced`, `unsubscribed`, or `failed`.
@@ -58,6 +63,7 @@ api/
     hubspot.py     API key + list-to-sequence mapping config
     cron.py        send (every 15 min), poll_replies (every 30 min), hubspot_sync (every 15 min)
     dashboard.py   stats endpoint
+    suppression.py global do-not-contact list: list/add/remove + audit log
 public/            static vanilla JS/HTML/CSS frontend
 ```
 
@@ -74,6 +80,8 @@ public/            static vanilla JS/HTML/CSS frontend
 | `active_enrollments` | set | emails with a currently-active enrollment, used by the reply/bounce-poll cron |
 | `sequence_contacts:{sequence_id}` | set | every email ever enrolled in that sequence, powers the sequence detail page |
 | `bounce_seen:{account_id}` | set | bounce-notification message IDs already checked for that account, so the same one isn't reprocessed every tick |
+| `suppression_list` | hash | `{email: json({reason, source, added_at, active, [removed_at]})}` — the global do-not-contact list, checked before every enrollment; entries are marked inactive on manual removal, never deleted |
+| `logs:suppression` | list | audit trail of every suppression add/remove event, newest first, capped at 1000 |
 | `blocklist_check:{domain}` | string | cached `{results, checked_at}` from the last domain blocklist check, TTL 24h |
 | `domain_auth_check:{domain}` | string | cached `{result, checked_at}` from the last SPF/DKIM/DMARC check, TTL 24h |
 | `hubspot:config` | string | json `{mappings: [{list_id, list_name, sequence_id, sequence_name}]}` — the API key is never stored here, only `HUBSPOT_API_KEY` |

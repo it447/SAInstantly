@@ -33,6 +33,7 @@ function renderNav(active) {
     ["/sequences.html", "Sequences"],
     ["/accounts.html", "Accounts"],
     ["/hubspot.html", "HubSpot"],
+    ["/suppression.html", "Suppression"],
   ];
   const el = document.getElementById("sidebar");
   if (!el) return;

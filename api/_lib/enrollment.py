@@ -24,6 +24,12 @@ def enroll_contact(sequence_id, contact, source="hubspot"):
     """
     email = contact["email"].strip().lower()
 
+    if models.is_suppressed(email):
+        # On the global do-not-contact list (bounced, unsubscribed, or
+        # manually added) - never re-enrolled in ANY sequence, regardless of
+        # which list upload or HubSpot sync brought them in this time.
+        return None
+
     if models.has_been_enrolled(email, sequence_id):
         return None
 
@@ -137,6 +143,12 @@ def stop_sequence(enrollment, status, reason=None):
     get_redis().srem(ACTIVE_SET_KEY, enrollment["email"])
     if was_active:
         models.incr_stat("stats:active_enrollments", -1)
+    if status in ("unsubscribed", "bounced"):
+        # Explicit opt-outs and hard bounces are the two signals that should
+        # block re-enrollment everywhere, not just stop this one sequence -
+        # a plain "replied" (interested or not) doesn't, since CAN-SPAM only
+        # requires honoring actual opt-out requests, not silence.
+        models.add_to_suppression_list(enrollment["email"], reason=reason or status, source=enrollment["sequence_id"])
     models.append_log(
         enrollment["sequence_id"],
         {
