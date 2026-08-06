@@ -41,6 +41,10 @@ Python/Vercel serverless functions + Upstash Redis + vanilla JS frontend.
   re-contact someone who already opted out or hard-bounced. Add/remove manually for compliance-driven cases
   (a phone request, a legal ask), with an audit log of every add/remove that's kept even after an entry is
   removed. A plain reply (interested or not) doesn't suppress - only an explicit opt-out or a hard bounce does.
+- **Per-account signature**: each connected account has an editable signature (Accounts page) appended to
+  every sequence email and manual reply it sends - sign-off plus the company's physical postal address, which
+  CAN-SPAM requires in every commercial email. Tied to the account rather than a single global line so each
+  mailbox can sign off as a real person.
 
 Lead/contact data is never deleted — enrollments are only ever marked `completed`,
 `replied`, `bounced`, `unsubscribed`, or `failed`.

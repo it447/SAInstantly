@@ -58,9 +58,14 @@ def _in_send_window():
     return start_hour <= hour < end_hour
 
 
-def _build_body(step, contact):
+def _build_body(step, contact, account):
     rendered = render_merge_tags(step["body"], contact.get("properties", {}))
-    return f"{rendered}\n\n---\nReply STOP to unsubscribe."
+    parts = [rendered]
+    signature = (account.get("signature") or "").strip()
+    if signature:
+        parts.append(signature)
+    parts.append("---\nReply STOP to unsubscribe.")
+    return "\n\n".join(parts)
 
 
 def _run_send():
@@ -123,7 +128,7 @@ def _run_send():
         subject = render_merge_tags(step["subject"], contact.get("properties", {}))
 
         try:
-            body = _build_body(step, contact)
+            body = _build_body(step, contact, account)
             access_token, refreshed = gmail.get_valid_access_token(account)
             if refreshed:
                 account.update(refreshed)

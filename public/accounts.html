@@ -29,7 +29,7 @@
       </div>
       <table>
         <thead>
-          <tr><th>Email</th><th>Status</th><th>Health</th><th>Sent today</th><th>Daily limit</th><th>Warm-up</th><th></th></tr>
+          <tr><th>Email</th><th>Status</th><th>Health</th><th>Signature</th><th>Sent today</th><th>Daily limit</th><th>Warm-up</th><th></th></tr>
         </thead>
         <tbody id="accounts-body"></tbody>
       </table>
@@ -118,6 +118,7 @@
           <td>${escapeHtml(a.email)}</td>
           <td><span class="badge ${a.status}">${escapeHtml(a.status)}</span></td>
           <td>${health ? `<span data-clickable style="display:inline-block">${healthCell}</span>` : healthCell}</td>
+          <td><button class="btn secondary sig-toggle-btn" data-id="${a.id}">${a.signature ? "Edit signature" : "Set signature"}</button></td>
           <td>${a.sent_today}</td>
           <td><input type="number" min="0" value="${a.daily_limit}" data-id="${a.id}" class="limit-input" style="width:90px"></td>
           <td>${warmupCell}</td>
@@ -127,13 +128,40 @@
         if (health) {
           const detailRow = document.createElement("tr");
           detailRow.style.display = "none";
-          detailRow.innerHTML = `<td colspan="7" style="background:rgba(0,0,0,0.08)">${healthFactorsHtml(health.factors)}</td>`;
+          detailRow.innerHTML = `<td colspan="8" style="background:rgba(0,0,0,0.08)">${healthFactorsHtml(health.factors)}</td>`;
           body.appendChild(detailRow);
 
           tr.querySelector("[data-clickable]").addEventListener("click", () => {
             detailRow.style.display = detailRow.style.display === "none" ? "table-row" : "none";
           });
         }
+
+        const sigRow = document.createElement("tr");
+        sigRow.style.display = "none";
+        sigRow.innerHTML = `
+          <td colspan="8">
+            <label style="font-size:0.85rem; color:var(--muted)">Appended to every email sent from this account (sign-off + the company's physical postal address - required on every commercial email).</label>
+            <textarea class="sig-textarea" rows="4" placeholder="Jane Smith&#10;Sales, Scale Army&#10;123 Main St, Suite 100, City, ST 00000">${escapeHtml(a.signature || "")}</textarea>
+            <button class="btn sig-save-btn" data-id="${a.id}" style="margin-top:0.5rem">Save signature</button>
+          </td>`;
+        body.appendChild(sigRow);
+
+        tr.querySelector(".sig-toggle-btn").addEventListener("click", () => {
+          sigRow.style.display = sigRow.style.display === "none" ? "table-row" : "none";
+        });
+        sigRow.querySelector(".sig-save-btn").addEventListener("click", async (e) => {
+          const btn = e.target;
+          const textarea = sigRow.querySelector(".sig-textarea");
+          btn.disabled = true;
+          try {
+            await api("/api/accounts/update", { method: "POST", body: { id: a.id, signature: textarea.value } });
+            btn.textContent = "Saved";
+            tr.querySelector(".sig-toggle-btn").textContent = textarea.value.trim() ? "Edit signature" : "Set signature";
+            setTimeout(() => (btn.textContent = "Save signature"), 1500);
+          } finally {
+            btn.disabled = false;
+          }
+        });
       });
 
       document.querySelectorAll(".limit-input").forEach((input) => {

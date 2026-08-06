@@ -97,6 +97,7 @@ def _public_account(account):
         "warming_up": effective_limit < daily_limit,
         "sent_today": models.daily_sent_for_account(account["id"], date_str),
         "connected_at": account.get("connected_at"),
+        "signature": account.get("signature", ""),
     }
 
 
@@ -216,6 +217,14 @@ def update(self):
         except (TypeError, ValueError):
             self._send_json(400, {"error": "daily_limit must be a number"})
             return
+
+    if "signature" in body:
+        # Appended to every email sent from this account - the sender's
+        # name/title plus the company's physical postal address (CAN-SPAM
+        # requires the address in every commercial email; tying it to a
+        # per-account signature also lets each mailbox sign off as a real
+        # person instead of a generic template).
+        account["signature"] = (body["signature"] or "").strip()
 
     account["updated_at"] = now_utc().isoformat()
     models.save_account(account)

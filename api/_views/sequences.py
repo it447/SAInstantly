@@ -286,12 +286,15 @@ def reply(self):
         if not subject.lower().startswith("re:"):
             subject = f"Re: {subject}"
 
+        signature = (account.get("signature") or "").strip()
+        full_body = f"{reply_body}\n\n{signature}" if signature else reply_body
+
         send_result = gmail.send_message(
             access_token,
             account["email"],
             email,
             subject,
-            reply_body,
+            full_body,
             thread_id=enr["thread_id"],
             in_reply_to_message_id=latest_message_id,
         )
