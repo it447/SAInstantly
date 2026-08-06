@@ -1,7 +1,9 @@
 import base64
 import os
+import re
 import time
 from email.mime.text import MIMEText
+from html import unescape
 from urllib.parse import urlencode
 
 import requests
@@ -131,6 +133,31 @@ def get_message(access_token, message_id):
     return resp.json()
 
 
+def get_message_full(access_token, message_id):
+    resp = requests.get(
+        f"{GMAIL_API}/messages/{message_id}",
+        headers={"Authorization": f"Bearer {access_token}"},
+        params={"format": "full"},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def search_messages(access_token, query, max_results=20):
+    """Gmail search (the same query syntax as the Gmail search box). Returns
+    a list of {"id", "threadId"} stubs - fetch each with get_message_full
+    for content."""
+    resp = requests.get(
+        f"{GMAIL_API}/messages",
+        headers={"Authorization": f"Bearer {access_token}"},
+        params={"q": query, "maxResults": max_results},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return resp.json().get("messages", [])
+
+
 def get_thread(access_token, thread_id):
     resp = requests.get(
         f"{GMAIL_API}/threads/{thread_id}",
@@ -140,3 +167,58 @@ def get_thread(access_token, thread_id):
     )
     resp.raise_for_status()
     return resp.json()
+
+
+def get_thread_full(access_token, thread_id):
+    """Like get_thread, but with full message bodies - for displaying the
+    actual sent email and any replies, not just detecting that a reply
+    exists."""
+    resp = requests.get(
+        f"{GMAIL_API}/threads/{thread_id}",
+        headers={"Authorization": f"Bearer {access_token}"},
+        params={"format": "full"},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _b64_decode(data):
+    padded = data + "=" * (-len(data) % 4)
+    return base64.urlsafe_b64decode(padded).decode("utf-8", errors="replace")
+
+
+def _strip_html(html):
+    text = re.sub(r"(?is)<(script|style).*?</\1>", "", html)
+    text = re.sub(r"(?i)<br\s*/?>|</p>|</div>", "\n", text)
+    text = re.sub(r"(?s)<[^>]+>", "", text)
+    return unescape(text)
+
+
+def extract_message_text(payload):
+    """Walks a Gmail message payload for the best human-readable body:
+    prefers text/plain, falls back to text/html stripped of markup (emails
+    from real mail clients are usually multipart with both)."""
+    mime_type = payload.get("mimeType", "")
+    body_data = (payload.get("body") or {}).get("data")
+
+    if mime_type == "text/plain" and body_data:
+        return _b64_decode(body_data)
+
+    parts = payload.get("parts") or []
+    for part in parts:
+        if part.get("mimeType") == "text/plain" and (part.get("body") or {}).get("data"):
+            return _b64_decode(part["body"]["data"])
+    for part in parts:
+        if part.get("mimeType", "").startswith("multipart/"):
+            text = extract_message_text(part)
+            if text:
+                return text
+
+    if mime_type == "text/html" and body_data:
+        return _strip_html(_b64_decode(body_data))
+    for part in parts:
+        if part.get("mimeType") == "text/html" and (part.get("body") or {}).get("data"):
+            return _strip_html(_b64_decode(part["body"]["data"]))
+
+    return ""

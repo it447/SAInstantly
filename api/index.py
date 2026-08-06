@@ -19,22 +19,29 @@ from urllib.parse import parse_qs, urlparse
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _lib.http import BaseHandler
-from _views import accounts, auth, cron, dashboard, hubspot, sequences, unsubscribe
+from _views import accounts, auth, cron, dashboard, debug, hubspot, sequences, suppression
 
 ROUTES = {
+    ("GET", "/api/debug/redis_check"): debug.redis_check,
+    ("GET", "/api/debug/queue_check"): debug.queue_check,
+    ("GET", "/api/debug/poll_replies_now"): debug.poll_replies_now,
     ("GET", "/api/auth/status"): auth.status,
-    ("GET", "/api/auth/debug_password_config"): auth.debug_password_config,
-    ("POST", "/api/auth/login"): auth.login,
+    ("GET", "/api/auth/login"): auth.login,
     ("POST", "/api/auth/logout"): auth.logout,
     ("GET", "/api/accounts/connect"): accounts.connect,
     ("GET", "/api/accounts/callback"): accounts.callback,
     ("GET", "/api/accounts/list"): accounts.list_accounts,
+    ("GET", "/api/accounts/blocklist_status"): accounts.blocklist_status,
+    ("GET", "/api/accounts/health_status"): accounts.health_status,
     ("POST", "/api/accounts/update"): accounts.update,
     ("POST", "/api/accounts/disconnect"): accounts.disconnect,
     ("GET", "/api/sequences/list"): sequences.list_sequences,
     ("POST", "/api/sequences/save"): sequences.save,
     ("POST", "/api/sequences/delete"): sequences.delete,
     ("GET", "/api/sequences/logs"): sequences.logs,
+    ("GET", "/api/sequences/detail"): sequences.detail,
+    ("GET", "/api/sequences/thread"): sequences.thread,
+    ("POST", "/api/sequences/reply"): sequences.reply,
     ("GET", "/api/hubspot/config"): hubspot.config,
     ("GET", "/api/hubspot/properties"): hubspot.properties,
     ("GET", "/api/hubspot/lists"): hubspot.lists,
@@ -47,7 +54,10 @@ ROUTES = {
     ("GET", "/api/cron/poll_replies"): cron.poll_replies,
     ("POST", "/api/cron/poll_replies"): cron.poll_replies,
     ("GET", "/api/dashboard/stats"): dashboard.stats,
-    ("GET", "/api/unsubscribe"): unsubscribe.unsubscribe,
+    ("GET", "/api/suppression/list"): suppression.list_suppression,
+    ("POST", "/api/suppression/add"): suppression.add_suppression,
+    ("POST", "/api/suppression/remove"): suppression.remove_suppression,
+    ("GET", "/api/suppression/audit"): suppression.audit_log,
 }
 
 

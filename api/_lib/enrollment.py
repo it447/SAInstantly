@@ -5,7 +5,7 @@ import os
 
 from . import models
 from .redis_client import get_redis
-from .utils import new_id, next_send_time, now_utc
+from .utils import new_id, next_send_time, next_send_time_soon, now_utc
 
 QUEUE_KEY = "queue:pending"
 ACTIVE_SET_KEY = "active_enrollments"
@@ -24,6 +24,12 @@ def enroll_contact(sequence_id, contact, source="hubspot"):
     """
     email = contact["email"].strip().lower()
 
+    if models.is_suppressed(email):
+        # On the global do-not-contact list (bounced, unsubscribed, or
+        # manually added) - never re-enrolled in ANY sequence, regardless of
+        # which list upload or HubSpot sync brought them in this time.
+        return None
+
     if models.has_been_enrolled(email, sequence_id):
         return None
 
@@ -33,7 +39,10 @@ def enroll_contact(sequence_id, contact, source="hubspot"):
         # sequence; don't double-enroll them concurrently.
         return None
 
-    send_at = next_send_time(after_days=0)
+    # The first email in a sequence should land soon after enrollment (not at
+    # a random point later in the day) - later steps still use the broader
+    # per-day spread via next_send_time, see advance_or_complete below.
+    send_at = next_send_time_soon()
     enrollment = {
         "id": new_id("enr_"),
         "email": email,
@@ -55,6 +64,7 @@ def enroll_contact(sequence_id, contact, source="hubspot"):
     }
     models.save_enrollment(enrollment)
     models.mark_enrolled_dedup(email, sequence_id)
+    models.add_sequence_contact(sequence_id, email)
     models.incr_stat("stats:enrolled_total")
     models.incr_stat("stats:active_enrollments")
 
@@ -133,6 +143,12 @@ def stop_sequence(enrollment, status, reason=None):
     get_redis().srem(ACTIVE_SET_KEY, enrollment["email"])
     if was_active:
         models.incr_stat("stats:active_enrollments", -1)
+    if status in ("unsubscribed", "bounced"):
+        # Explicit opt-outs and hard bounces are the two signals that should
+        # block re-enrollment everywhere, not just stop this one sequence -
+        # a plain "replied" (interested or not) doesn't, since CAN-SPAM only
+        # requires honoring actual opt-out requests, not silence.
+        models.add_to_suppression_list(enrollment["email"], reason=reason or status, source=enrollment["sequence_id"])
     models.append_log(
         enrollment["sequence_id"],
         {
@@ -153,11 +169,19 @@ def daily_cap():
     return int(os.environ.get("DAILY_SEND_CAP", "500"))
 
 
-def pick_account(accounts, remaining_by_account):
-    """Pick the connected account with the most remaining daily capacity."""
+def pick_account(accounts, remaining_by_account, allowed_account_ids=None):
+    """Pick the connected account with the most remaining daily capacity.
+    If allowed_account_ids is a non-empty list, only those accounts are
+    considered (a sequence scoped to specific senders); otherwise every
+    connected account is a candidate."""
+    candidates = accounts
+    if allowed_account_ids:
+        allowed = set(allowed_account_ids)
+        candidates = [a for a in accounts if a["id"] in allowed]
+
     best = None
     best_remaining = -1
-    for acc in accounts:
+    for acc in candidates:
         if acc.get("status") != "connected":
             continue
         remaining = remaining_by_account.get(acc["id"], 0)

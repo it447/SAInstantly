@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Conversation — Cold Email Sequencer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<script>document.body.classList.toggle('light-mode', localStorage.getItem('theme') === 'light');</script>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="main">
+    <div class="container">
+    <div class="row" style="align-items:center; justify-content:space-between">
+      <h1 id="title">Conversation</h1>
+      <a class="btn secondary" id="back-link" href="#">&larr; Back to sequence</a>
+    </div>
+    <div class="orange-bar"></div>
+
+    <div class="section card">
+      <div id="messages"></div>
+      <div class="empty" id="empty" style="display:none"></div>
+    </div>
+
+    <div class="section card" id="reply-card" style="display:none; margin-top:1.5rem">
+      <h2>Reply</h2>
+      <div class="field">
+        <textarea id="reply-body" placeholder="Type your reply…" rows="6"></textarea>
+      </div>
+      <button class="btn" id="send-reply-btn">Send reply</button>
+      <div class="error" id="reply-error" style="display:none"></div>
+      <div class="success" id="reply-success" style="display:none"></div>
+    </div>
+    </div>
+    </main>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    let contactEmail = null;
+    let sequenceId = null;
+
+    async function load() {
+      renderNav("");
+      const params = new URLSearchParams(window.location.search);
+      contactEmail = params.get("email");
+      sequenceId = params.get("sequence_id");
+      document.getElementById("back-link").href = `/sequence.html?id=${encodeURIComponent(sequenceId || "")}`;
+
+      if (!contactEmail || !sequenceId) {
+        document.getElementById("title").textContent = "No contact specified";
+        return;
+      }
+      document.getElementById("title").textContent = contactEmail;
+
+      const { messages, note, error } = await api(
+        `/api/sequences/thread?email=${encodeURIComponent(contactEmail)}&sequence_id=${encodeURIComponent(sequenceId)}`
+      );
+
+      const container = document.getElementById("messages");
+      const empty = document.getElementById("empty");
+      const replyCard = document.getElementById("reply-card");
+
+      if (error) {
+        empty.textContent = error;
+        empty.style.display = "block";
+        replyCard.style.display = "none";
+        return;
+      }
+      if (!messages || messages.length === 0) {
+        empty.textContent = note || "No messages yet.";
+        empty.style.display = "block";
+        replyCard.style.display = "none";
+        return;
+      }
+
+      empty.style.display = "none";
+      replyCard.style.display = "block";
+      container.innerHTML = messages
+        .map(
+          (m) => `
+        <div class="msg-card ${m.direction}">
+          <div class="msg-meta">
+            <span>${escapeHtml(m.from)} &rarr; ${escapeHtml(m.to)}</span>
+            <span>${escapeHtml(m.date)}</span>
+          </div>
+          <div class="msg-subject">${escapeHtml(m.subject)}</div>
+          <div class="msg-body">${escapeHtml(m.body)}</div>
+        </div>`
+        )
+        .join("");
+    }
+
+    document.getElementById("send-reply-btn").addEventListener("click", async () => {
+      const errorEl = document.getElementById("reply-error");
+      const successEl = document.getElementById("reply-success");
+      const textarea = document.getElementById("reply-body");
+      const btn = document.getElementById("send-reply-btn");
+      errorEl.style.display = "none";
+      successEl.style.display = "none";
+
+      const text = textarea.value.trim();
+      if (!text) return;
+
+      btn.disabled = true;
+      try {
+        await api("/api/sequences/reply", {
+          method: "POST",
+          body: { email: contactEmail, sequence_id: sequenceId, body: text },
+        });
+        textarea.value = "";
+        successEl.textContent = "Reply sent.";
+        successEl.style.display = "block";
+        await load();
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.style.display = "block";
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    load().catch((err) => {
+      if (err.message !== "unauthorized") {
+        console.error(err);
+        document.getElementById("empty").textContent = err.message;
+        document.getElementById("empty").style.display = "block";
+      }
+    });
+  </script>
+</body>
+</html>

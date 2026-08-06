@@ -5,6 +5,7 @@ requires-python = ">=3.12"
 dependencies = [
     "upstash-redis==1.7.0",
     "requests==2.32.3",
+    "dnspython==2.8.0",
 ]
 
 [tool.vercel]

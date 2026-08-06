@@ -7,8 +7,10 @@
 <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
+<script>document.body.classList.toggle('light-mode', localStorage.getItem('theme') === 'light');</script>
   <div class="login-wrap">
     <div class="card login-card">
+      <div class="brand-s">S</div>
       <h1>Cold Email Sequencer</h1>
       <form id="login-form">
         <div class="field">
@@ -20,25 +22,26 @@
       </form>
     </div>
   </div>
-  <script src="/js/api.js"></script>
   <script>
+    // Deliberately not using the shared api() helper here: it auto-redirects
+    // to this same page on a 401, which would just silently reload this
+    // form before a failed attempt could ever be shown.
     document.getElementById("login-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       const errorEl = document.getElementById("error");
       errorEl.style.display = "none";
       const password = document.getElementById("password").value;
       try {
-        await api("/api/auth/login", { method: "POST", body: { password }, skipAuthRedirect: true });
+        const res = await fetch("/api/auth/login", { headers: { "X-Auth-Token": password } });
+        if (!res.ok) {
+          errorEl.textContent = "Incorrect password.";
+          errorEl.style.display = "block";
+          return;
+        }
+        localStorage.setItem("auth_token", password);
         window.location.href = "/index.html";
       } catch (err) {
-        // TEMPORARY: surface the diagnostic fields from the server so we can
-        // pin down why login is failing, without ever showing the actual
-        // password values.
-        const d = err.data || {};
-        errorEl.textContent =
-          "received_length" in d
-            ? `Incorrect password. (received_length=${d.received_length}, expected_length=${d.expected_length}, matches_after_strip=${d.received_matches_expected_after_strip})`
-            : "Incorrect password.";
+        errorEl.textContent = "Could not reach the server. Please try again.";
         errorEl.style.display = "block";
       }
     });

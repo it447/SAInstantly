@@ -7,22 +7,28 @@
 <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-  <nav class="nav" id="nav"></nav>
-  <div class="container">
-    <h1>Dashboard</h1>
+<script>document.body.classList.toggle('light-mode', localStorage.getItem('theme') === 'light');</script>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="main">
+      <div class="container">
+        <h1>Dashboard</h1>
+        <div class="orange-bar"></div>
 
-    <div class="grid stats" id="stats"></div>
+        <div class="grid stats" id="stats"></div>
 
-    <div class="section card">
-      <h2>Sequences</h2>
-      <table id="sequences-table">
-        <thead>
-          <tr><th>Name</th><th>Status</th><th>Steps</th></tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-      <div class="empty" id="sequences-empty" style="display:none">No sequences yet. <a href="/sequences.html">Create one</a>.</div>
-    </div>
+        <div class="section card">
+          <h2>Sequences</h2>
+          <table id="sequences-table">
+            <thead>
+              <tr><th>Name</th><th>Status</th><th>Steps</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <div class="empty" id="sequences-empty" style="display:none">No sequences yet. <a href="/sequences.html">Create one</a>.</div>
+        </div>
+      </div>
+    </main>
   </div>
 
   <script src="/js/api.js"></script>
@@ -40,6 +46,7 @@
         statTile(stats.active_enrollments, "Contacts currently enrolled"),
         statTile(`${stats.emails_sent_today} / ${stats.daily_cap}`, "Emails sent today"),
         statTile(stats.replies_today, "Replies today"),
+        statTile(stats.bounces_today, "Bounces today"),
         statTile(stats.unsubscribes_today, "Unsubscribes today"),
         statTile(stats.connected_accounts, "Connected accounts"),
       ].join("");
@@ -51,10 +58,14 @@
       } else {
         stats.sequences.forEach((s) => {
           const tr = document.createElement("tr");
+          tr.setAttribute("data-clickable", "");
           tr.innerHTML = `
-            <td><a href="/sequences.html?id=${encodeURIComponent(s.id)}">${escapeHtml(s.name)}</a></td>
+            <td>${escapeHtml(s.name)}</td>
             <td><span class="badge ${s.status}">${escapeHtml(s.status)}</span></td>
             <td>${s.steps}</td>`;
+          tr.addEventListener("click", () => {
+            window.location.href = `/sequence.html?id=${encodeURIComponent(s.id)}`;
+          });
           tbody.appendChild(tr);
         });
       }

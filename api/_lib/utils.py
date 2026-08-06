@@ -1,5 +1,3 @@
-import hashlib
-import hmac
 import json
 import os
 import random
@@ -13,6 +11,27 @@ except ImportError:  # pragma: no cover
     ZoneInfo = None
 
 SEND_TZ_NAME = os.environ.get("SEND_TIMEZONE", "America/New_York")
+
+# Domains that must never be connected as a sending account in this tool
+# (e.g. the company's primary domain, kept separate from cold outreach to
+# protect its deliverability/reputation). Configurable via PROTECTED_DOMAINS
+# (comma-separated), with a hard-coded default so protection holds even if
+# that env var is never set.
+DEFAULT_PROTECTED_DOMAINS = ["scalearmy.com"]
+
+
+def protected_domains():
+    configured = os.environ.get("PROTECTED_DOMAINS", "")
+    domains = [d.strip().lower() for d in configured.split(",") if d.strip()]
+    return domains or DEFAULT_PROTECTED_DOMAINS
+
+
+def is_protected_domain(email):
+    email = (email or "").strip().lower()
+    if "@" not in email:
+        return False
+    domain = email.rsplit("@", 1)[1]
+    return any(domain == d or domain.endswith(f".{d}") for d in protected_domains())
 
 
 def send_tz():
@@ -84,6 +103,36 @@ def next_send_time(after_days=0):
     return int(target.astimezone(timezone.utc).timestamp())
 
 
+def next_send_time_soon(min_delay_seconds=60, max_delay_seconds=600):
+    """Like next_send_time, but for a contact's very first email: send
+    within a few minutes of enrollment (default 1-10 min, comfortably under
+    a 30-minute target once combined with the 15-minute cron cadence)
+    instead of at a random point anywhere in the rest of the day. Still
+    respects the 8am-6pm window - if enrollment happens outside it, the
+    short random offset is applied from the next window's start instead.
+    """
+    start_hour, end_hour = send_window_hours()
+    local_now = now_local()
+    offset = timedelta(seconds=random.randint(min_delay_seconds, max_delay_seconds))
+
+    window_start_today = datetime.combine(local_now.date(), datetime.min.time(), tzinfo=send_tz()).replace(hour=start_hour)
+    window_end_today = datetime.combine(local_now.date(), datetime.min.time(), tzinfo=send_tz()).replace(hour=end_hour)
+
+    if local_now < window_start_today:
+        target = window_start_today + offset
+    elif local_now >= window_end_today:
+        tomorrow = local_now.date() + timedelta(days=1)
+        target = datetime.combine(tomorrow, datetime.min.time(), tzinfo=send_tz()).replace(hour=start_hour) + offset
+    else:
+        candidate = local_now + offset
+        # Don't let the short offset push past today's close - if enrollment
+        # happens right near the end of the window, send just before close
+        # instead of waiting for tomorrow's window (respects "within 30 min").
+        target = candidate if candidate < window_end_today else window_end_today - timedelta(seconds=30)
+
+    return int(target.astimezone(timezone.utc).timestamp())
+
+
 MERGE_TAG_RE = re.compile(r"\{\{\s*([a-zA-Z0-9_]+)\s*\}\}")
 
 
@@ -113,20 +162,3 @@ def sequence_merge_tag_properties(sequence):
     return properties
 
 
-def unsubscribe_token(email, sequence_id):
-    secret = os.environ.get("UNSUBSCRIBE_SECRET", "").encode("utf-8")
-    payload = f"{email}:{sequence_id}".encode("utf-8")
-    return hmac.new(secret, payload, hashlib.sha256).hexdigest()[:32]
-
-
-def verify_unsubscribe_token(email, sequence_id, token):
-    expected = unsubscribe_token(email, sequence_id)
-    return hmac.compare_digest(expected, token or "")
-
-
-def unsubscribe_link(email, sequence_id):
-    base = os.environ.get("APP_BASE_URL", "").rstrip("/")
-    token = unsubscribe_token(email, sequence_id)
-    from urllib.parse import quote
-
-    return f"{base}/api/unsubscribe?e={quote(email)}&s={quote(sequence_id)}&t={token}"

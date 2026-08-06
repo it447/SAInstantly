@@ -1,12 +1,9 @@
 import random
 import time
 
-from _lib import enrollment, gmail, hubspot_client, models
+from _lib import deliverability, enrollment, gmail, hubspot_client, models
 from _lib.auth import require_cron_auth
-from _lib.utils import now_local, render_merge_tags, send_window_hours, sequence_merge_tag_properties, unsubscribe_link
-
-BATCH_SIZE = 100
-
+from _lib.utils import now_local, render_merge_tags, send_window_hours, sequence_merge_tag_properties
 
 def _sync_mapping(mapping, api_key):
     list_id = mapping["list_id"]
@@ -16,26 +13,18 @@ def _sync_mapping(mapping, api_key):
     if not sequence or sequence.get("archived") or sequence.get("status") != "active":
         return {"list_id": list_id, "skipped": "sequence not active"}
 
-    member_ids = hubspot_client.get_all_list_member_ids(api_key, list_id)
-    new_ids = [i for i in member_ids if not models.hubspot_contact_seen(list_id, i)]
     needed_properties = sequence_merge_tag_properties(sequence)
+    contacts = hubspot_client.get_list_contacts(api_key, list_id, properties=needed_properties)
+    new_contacts = [c for c in contacts if not models.hubspot_contact_seen(list_id, c["hubspot_id"])]
 
     enrolled = 0
-    for i in range(0, len(new_ids), BATCH_SIZE):
-        chunk = new_ids[i : i + BATCH_SIZE]
-        contacts = hubspot_client.batch_read_contacts(api_key, chunk, properties=needed_properties)
-        contacts_by_id = {c["hubspot_id"]: c for c in contacts}
+    for contact in new_contacts:
+        models.mark_hubspot_contact_seen(list_id, contact["hubspot_id"])
+        result = enrollment.enroll_contact(sequence_id, contact, source="hubspot")
+        if result:
+            enrolled += 1
 
-        for hubspot_id in chunk:
-            models.mark_hubspot_contact_seen(list_id, hubspot_id)
-            contact = contacts_by_id.get(hubspot_id)
-            if not contact:
-                continue
-            result = enrollment.enroll_contact(sequence_id, contact, source="hubspot")
-            if result:
-                enrolled += 1
-
-    return {"list_id": list_id, "checked": len(new_ids), "enrolled": enrolled}
+    return {"list_id": list_id, "checked": len(new_contacts), "enrolled": enrolled}
 
 
 def hubspot_sync(self):
@@ -69,10 +58,14 @@ def _in_send_window():
     return start_hour <= hour < end_hour
 
 
-def _build_body(step, contact, sequence_id):
+def _build_body(step, contact, account):
     rendered = render_merge_tags(step["body"], contact.get("properties", {}))
-    link = unsubscribe_link(contact["email"], sequence_id)
-    return f"{rendered}\n\n---\nUnsubscribe: {link}"
+    parts = [rendered]
+    signature = (account.get("signature") or "").strip()
+    if signature:
+        parts.append(signature)
+    parts.append("---\nReply STOP to unsubscribe.")
+    return "\n\n".join(parts)
 
 
 def _run_send():
@@ -89,7 +82,10 @@ def _run_send():
 
     accounts = models.list_accounts()
     remaining_by_account = {
-        acc["id"]: acc.get("daily_limit", 0) - models.daily_sent_for_account(acc["id"])
+        # Ramps a newly-connected account's effective cap up gradually
+        # instead of letting it send at its full configured daily_limit
+        # from day one - see deliverability.effective_daily_limit.
+        acc["id"]: deliverability.effective_daily_limit(acc) - models.daily_sent_for_account(acc["id"])
         for acc in accounts
         if acc.get("status") == "connected"
     }
@@ -118,16 +114,21 @@ def _run_send():
             enrollment.advance_or_complete(enr, sequence)
             continue
 
-        account = enrollment.pick_account(accounts, remaining_by_account)
+        account = enrollment.pick_account(accounts, remaining_by_account, sequence.get("account_ids"))
         if not account:
-            break
+            # Don't break the whole tick over one sequence's accounts being
+            # out of capacity - a sequence scoped to specific senders can be
+            # exhausted while other accounts still have room for other
+            # sequences' due sends. This item stays queued and gets retried
+            # on a later tick.
+            continue
 
         step = steps[step_index]
         contact = enr["contact"]
         subject = render_merge_tags(step["subject"], contact.get("properties", {}))
-        body = _build_body(step, contact, sequence_id)
 
         try:
+            body = _build_body(step, contact, account)
             access_token, refreshed = gmail.get_valid_access_token(account)
             if refreshed:
                 account.update(refreshed)
@@ -158,6 +159,7 @@ def _run_send():
             enr["attempts"] = 0
 
             models.record_send_stat(account["id"])
+            models.incr_stat(f"stats:sequence:{sequence_id}:sent")
             models.append_log(
                 sequence_id,
                 {
@@ -256,7 +258,81 @@ def _run_poll_replies():
     return {"ok": True, "checked": checked, "replied": replied}
 
 
+# A bounce notification is a separate email that lands in the *sending*
+# account's own inbox (not a reply in the original thread), so it needs a
+# real Gmail search rather than checking a known thread_id. Bounces from all
+# sorts of receiving mail servers vary wildly in exact MIME format (DSN
+# compliance differs), so rather than parsing that structure, this searches
+# for bounce-shaped messages and then confirms which contact it's about by
+# checking whether exactly one currently-active enrolled email appears in
+# the subject/body text - simpler and more robust across formats than
+# trying to parse every provider's bounce layout.
+BOUNCE_SEARCH_QUERY = (
+    '(from:mailer-daemon OR from:postmaster OR subject:"delivery status notification" '
+    'OR subject:"undelivered mail" OR subject:"delivery has failed" '
+    'OR subject:"returned to sender" OR subject:"delivery incomplete") newer_than:3d'
+)
+
+
+def _run_poll_bounces():
+    active_emails = {e.strip().lower() for e in enrollment.list_active_emails()}
+    checked = 0
+    bounced = []
+
+    if not active_emails:
+        return {"ok": True, "checked": 0, "bounced": []}
+
+    for account in models.list_accounts():
+        if account.get("status") != "connected":
+            continue
+
+        try:
+            access_token, refreshed = gmail.get_valid_access_token(account)
+            if refreshed:
+                account.update(refreshed)
+                models.save_account(account)
+            candidates = gmail.search_messages(access_token, BOUNCE_SEARCH_QUERY)
+        except Exception:
+            # One account's search failing (e.g. a stale token) shouldn't
+            # stop bounce checking for the other connected accounts.
+            continue
+
+        for stub in candidates:
+            message_id = stub["id"]
+            if models.bounce_message_seen(account["id"], message_id):
+                continue
+            models.mark_bounce_message_seen(account["id"], message_id)
+            checked += 1
+
+            try:
+                full = gmail.get_message_full(access_token, message_id)
+            except Exception:
+                continue
+
+            payload = full.get("payload", {})
+            headers = {h["name"]: h["value"] for h in payload.get("headers", [])}
+            haystack = f"{headers.get('Subject', '')}\n{gmail.extract_message_text(payload)}".lower()
+            matches = [e for e in active_emails if e in haystack]
+            if len(matches) != 1:
+                # No active contact's address found, or more than one
+                # (ambiguous) - don't guess which enrollment this is about.
+                continue
+
+            bounced_email = matches[0]
+            enr = models.get_enrollment(bounced_email)
+            # A bounce always comes back to the account that sent the
+            # original message, so require that match too as a sanity check.
+            if not enr or enr.get("status") != "active" or enr.get("account_id") != account["id"]:
+                continue
+
+            enrollment.stop_sequence(enr, "bounced", reason="hard bounce detected")
+            models.record_bounce_stat(account["id"])
+            bounced.append(bounced_email)
+
+    return {"ok": True, "checked": checked, "bounced": bounced}
+
+
 def poll_replies(self):
     if not require_cron_auth(self):
         return
-    self._send_json(200, _run_poll_replies())
+    self._send_json(200, {"ok": True, "replies": _run_poll_replies(), "bounces": _run_poll_bounces()})

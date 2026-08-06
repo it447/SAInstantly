@@ -7,9 +7,13 @@
 <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-  <nav class="nav" id="nav"></nav>
-  <div class="container">
+<script>document.body.classList.toggle('light-mode', localStorage.getItem('theme') === 'light');</script>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="main">
+    <div class="container">
     <h1>Sequences</h1>
+    <div class="orange-bar"></div>
 
     <div class="row" style="align-items:flex-start">
       <div class="card" style="flex: 0 0 260px">
@@ -21,7 +25,8 @@
       <div class="card" style="flex:1">
         <div class="row" style="align-items:center; margin-bottom:1rem">
           <h2 style="margin:0" id="editor-title">New sequence</h2>
-          <div style="flex:0; display:flex; gap:0.5rem; white-space:nowrap">
+          <div style="flex:0; display:flex; gap:0.5rem; align-items:center; white-space:nowrap">
+            <a id="view-contacts-link" href="#" style="display:none">View contacts &amp; stats &rarr;</a>
             <select id="status-select" style="width:auto">
               <option value="active">Active</option>
               <option value="paused">Paused</option>
@@ -34,9 +39,18 @@
           <input id="name" placeholder="e.g. Cold outbound — SaaS founders">
         </div>
 
+        <div class="field">
+          <label>Sending accounts</label>
+          <div id="account-checklist" class="muted" style="font-size:0.85rem">Loading connected accounts…</div>
+          <div class="muted" style="font-size:0.8rem; margin-top:0.35rem">
+            Leave none checked to rotate across every connected account (default). Check specific accounts to
+            restrict this sequence to only those senders.
+          </div>
+        </div>
+
         <div class="muted" style="font-size:0.85rem; margin-bottom:1rem">
           Click <strong>Insert merge tag</strong> on a step to search your HubSpot contact properties and drop one
-          into whichever field you last clicked. An unsubscribe link is appended to every email automatically.
+          into whichever field you last clicked. A "Reply STOP to unsubscribe" line is appended to every email automatically.
         </div>
 
         <div id="steps"></div>
@@ -59,6 +73,8 @@
       </table>
       <div class="empty" id="logs-empty" style="display:none">No activity yet.</div>
     </div>
+    </div>
+    </main>
   </div>
 
   <template id="step-template">
@@ -90,6 +106,7 @@
   <script>
     let sequences = [];
     let currentId = null;
+    let connectedAccounts = [];
 
     // Small fallback list so the picker still works before a HubSpot API key is connected.
     let hubspotProperties = [
@@ -98,6 +115,37 @@
       { name: "lastname", label: "Last Name" },
       { name: "company", label: "Company" },
     ];
+
+    async function loadAccounts() {
+      try {
+        const { accounts } = await api("/api/accounts/list");
+        connectedAccounts = accounts;
+      } catch (err) {
+        connectedAccounts = [];
+      }
+    }
+
+    function renderAccountChecklist(selectedIds) {
+      const el = document.getElementById("account-checklist");
+      const selected = new Set(selectedIds || []);
+      if (connectedAccounts.length === 0) {
+        el.innerHTML = 'No accounts connected yet. <a href="/accounts.html">Connect one</a>.';
+        return;
+      }
+      el.innerHTML = connectedAccounts
+        .map(
+          (a) => `
+        <label style="display:flex; align-items:center; gap:0.5rem; padding:0.25rem 0; cursor:pointer; font-size:0.9rem; color:var(--cream)">
+          <input type="checkbox" class="account-checkbox" value="${a.id}" style="width:auto" ${selected.has(a.id) ? "checked" : ""} ${a.status !== "connected" ? "disabled" : ""}>
+          ${escapeHtml(a.email)} ${a.status !== "connected" ? '<span class="muted">(disconnected)</span>' : ""}
+        </label>`
+        )
+        .join("");
+    }
+
+    function readSelectedAccountIds() {
+      return Array.from(document.querySelectorAll(".account-checkbox:checked")).map((el) => el.value);
+    }
 
     async function loadHubspotProperties() {
       try {
@@ -199,6 +247,8 @@
       document.getElementById("steps").innerHTML = "";
       document.getElementById("delete-btn").style.display = "none";
       document.getElementById("logs-card").style.display = "none";
+      document.getElementById("view-contacts-link").style.display = "none";
+      renderAccountChecklist([]);
       addStepRow();
       renderList();
     }
@@ -210,7 +260,11 @@
       document.getElementById("status-select").value = seq.status;
       document.getElementById("steps").innerHTML = "";
       seq.steps.forEach(addStepRow);
+      renderAccountChecklist(seq.account_ids);
       document.getElementById("delete-btn").style.display = "inline-flex";
+      const contactsLink = document.getElementById("view-contacts-link");
+      contactsLink.href = `/sequence.html?id=${encodeURIComponent(seq.id)}`;
+      contactsLink.style.display = "inline";
       renderList();
       loadLogs(seq.id);
     }
@@ -282,6 +336,7 @@
           name: document.getElementById("name").value,
           status: document.getElementById("status-select").value,
           steps: readSteps(),
+          account_ids: readSelectedAccountIds(),
         };
         const { sequence } = await api("/api/sequences/save", { method: "POST", body: payload });
         await refreshSequences();
@@ -303,7 +358,7 @@
 
     async function init() {
       renderNav("/sequences.html");
-      await Promise.all([refreshSequences(), loadHubspotProperties()]);
+      await Promise.all([refreshSequences(), loadHubspotProperties(), loadAccounts()]);
       const params = new URLSearchParams(window.location.search);
       const id = params.get("id");
       const seq = id && sequences.find((s) => s.id === id);

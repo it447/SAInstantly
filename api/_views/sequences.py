@@ -1,4 +1,4 @@
-from _lib import models
+from _lib import enrollment, gmail, models
 from _lib.auth import require_auth
 from _lib.utils import new_id, now_utc
 
@@ -21,6 +21,10 @@ def _validate(body):
             int(step.get("delay_days", 0))
         except (TypeError, ValueError):
             return f"step {i + 1}: delay_days must be a number"
+
+    account_ids = body.get("account_ids")
+    if account_ids is not None and not isinstance(account_ids, list):
+        return "account_ids must be a list"
 
     return None
 
@@ -55,12 +59,19 @@ def save(self):
     sequence_id = body.get("id")
     existing = models.get_sequence(sequence_id) if sequence_id else None
 
+    account_ids = body.get("account_ids")
+    if account_ids is None:
+        account_ids = existing.get("account_ids", []) if existing else []
+
     sequence = {
         "id": existing["id"] if existing else new_id("seq_"),
         "name": body["name"].strip(),
         "status": body.get("status", existing.get("status", "active") if existing else "active"),
         "archived": False,
         "steps": steps,
+        # Which connected accounts this sequence is allowed to send from -
+        # empty means "any connected account" (today's default rotation).
+        "account_ids": [str(a) for a in account_ids],
         "created_at": existing.get("created_at") if existing else now_utc().isoformat(),
         "updated_at": now_utc().isoformat(),
     }
@@ -91,3 +102,218 @@ def logs(self):
         return
     entries = models.get_logs(sequence_id, limit=200)
     self._send_json(200, {"logs": entries})
+
+
+def detail(self):
+    """Everything the standalone per-sequence page needs: the sequence
+    itself, roll-up stats, and every contact ever enrolled in it with their
+    current status and next send time."""
+    if not require_auth(self):
+        return
+    query = self._query()
+    sequence_id = query.get("id", [None])[0]
+    if not sequence_id:
+        self._send_json(400, {"error": "id is required"})
+        return
+
+    sequence = models.get_sequence(sequence_id)
+    if not sequence:
+        self._send_json(404, {"error": "sequence not found"})
+        return
+
+    # Self-heal: contacts enrolled before the sequence_contacts index existed
+    # (or before this specific contact's index entry was otherwise written)
+    # are still tracked in active_enrollments, so backfill from there on
+    # every load instead of requiring a one-off manual fix.
+    for active_email in enrollment.list_active_emails():
+        active_enr = models.get_enrollment(active_email)
+        if active_enr:
+            models.add_sequence_contact(active_enr["sequence_id"], active_email)
+
+    records = models.list_enrollments_for_sequence(sequence_id)
+    stats = {"total": len(records), "active": 0, "completed": 0, "replied": 0, "unsubscribed": 0, "failed": 0, "bounced": 0, "moved_to_other_sequence": 0}
+    contacts = []
+    for e in records:
+        contact = e.get("contact") or {}
+        properties = contact.get("properties") or {}
+        # An enrollment record only tracks a contact's current sequence, so a
+        # contact who has since moved on to a different one shows up here
+        # with whatever status they were left at, not this sequence's steps.
+        in_this_sequence = e.get("sequence_id") == sequence_id
+        status = e.get("status") if in_this_sequence else "moved_to_other_sequence"
+        stats[status] = stats.get(status, 0) + 1
+        contacts.append(
+            {
+                "email": e["email"],
+                "firstname": properties.get("firstname"),
+                "lastname": properties.get("lastname"),
+                "status": status,
+                "step_index": e.get("step_index", 0) if in_this_sequence else None,
+                "next_send_at": e.get("next_send_at") if in_this_sequence and status == "active" else None,
+                "enrolled_at": e.get("enrolled_at"),
+                "updated_at": e.get("updated_at"),
+            }
+        )
+    contacts.sort(key=lambda e: e.get("enrolled_at") or "", reverse=True)
+    stats["sent"] = models.get_stat(f"stats:sequence:{sequence_id}:sent") or 0
+
+    account_ids = sequence.get("account_ids") or []
+    if account_ids:
+        accounts_by_id = {a["id"]: a for a in models.list_accounts()}
+        sending_accounts = [accounts_by_id[a_id]["email"] for a_id in account_ids if a_id in accounts_by_id]
+    else:
+        sending_accounts = []
+
+    self._send_json(
+        200,
+        {
+            "sequence": {
+                "id": sequence["id"],
+                "name": sequence["name"],
+                "status": sequence.get("status"),
+                "steps": len(sequence.get("steps", [])),
+                "sending_accounts": sending_accounts,
+            },
+            "stats": stats,
+            "contacts": contacts,
+        },
+    )
+
+
+def thread(self):
+    """The actual sent email(s) and any replies for one enrolled contact, so
+    you can read the conversation instead of just a status badge."""
+    if not require_auth(self):
+        return
+    query = self._query()
+    email = (query.get("email", [None])[0] or "").strip().lower()
+    sequence_id = query.get("sequence_id", [None])[0]
+    if not email or not sequence_id:
+        self._send_json(400, {"error": "email and sequence_id are required"})
+        return
+
+    enr = models.get_enrollment(email)
+    if not enr or enr.get("sequence_id") != sequence_id:
+        self._send_json(404, {"error": "no enrollment found for this contact in this sequence"})
+        return
+
+    if not enr.get("thread_id") or not enr.get("account_id"):
+        self._send_json(200, {"messages": [], "note": "No email has been sent to this contact yet."})
+        return
+
+    account = models.get_account(enr["account_id"])
+    if not account:
+        self._send_json(404, {"error": "The account this was sent from no longer exists."})
+        return
+
+    access_token, refreshed = gmail.get_valid_access_token(account)
+    if refreshed:
+        account.update(refreshed)
+        models.save_account(account)
+
+    thread_data = gmail.get_thread_full(access_token, enr["thread_id"])
+    account_email = account["email"].strip().lower()
+
+    messages = []
+    for msg in thread_data.get("messages", []):
+        headers = {h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])}
+        from_header = headers.get("From", "")
+        messages.append(
+            {
+                "from": from_header,
+                "to": headers.get("To", ""),
+                "date": headers.get("Date", ""),
+                "subject": headers.get("Subject", ""),
+                "body": gmail.extract_message_text(msg.get("payload", {})),
+                "direction": "sent" if account_email in from_header.lower() else "received",
+            }
+        )
+
+    self._send_json(200, {"messages": messages})
+
+
+def reply(self):
+    """Send a manual, one-off reply to a contact from the conversation view -
+    independent of the sequence's automated status (the sequence may already
+    be stopped/completed for this contact; that's fine, this is just a
+    regular reply, not a resumed sequence step)."""
+    if not require_auth(self):
+        return
+
+    body = self._read_json_body()
+    email = (body.get("email") or "").strip().lower()
+    sequence_id = body.get("sequence_id")
+    reply_body = (body.get("body") or "").strip()
+
+    if not email or not sequence_id:
+        self._send_json(400, {"error": "email and sequence_id are required"})
+        return
+    if not reply_body:
+        self._send_json(400, {"error": "A message body is required"})
+        return
+
+    enr = models.get_enrollment(email)
+    if not enr or enr.get("sequence_id") != sequence_id:
+        self._send_json(404, {"error": "no enrollment found for this contact in this sequence"})
+        return
+    if not enr.get("thread_id") or not enr.get("account_id"):
+        self._send_json(400, {"error": "No email has been sent to this contact yet, so there's no thread to reply on."})
+        return
+
+    account = models.get_account(enr["account_id"])
+    if not account:
+        self._send_json(404, {"error": "The account this was sent from no longer exists."})
+        return
+
+    try:
+        access_token, refreshed = gmail.get_valid_access_token(account)
+        if refreshed:
+            account.update(refreshed)
+            models.save_account(account)
+
+        # Thread against the most recent message in the conversation
+        # (whichever side sent it), not enr["last_message_id"] - that field
+        # only tracks the last message *we* sent, which is stale as soon as
+        # the contact has replied since.
+        thread_data = gmail.get_thread_full(access_token, enr["thread_id"])
+        messages = thread_data.get("messages", [])
+        if not messages:
+            self._send_json(400, {"error": "This thread has no messages to reply to."})
+            return
+        latest_headers = {h["name"]: h["value"] for h in messages[-1].get("payload", {}).get("headers", [])}
+        latest_message_id = latest_headers.get("Message-ID")
+        subject = latest_headers.get("Subject") or "(no subject)"
+        if not subject.lower().startswith("re:"):
+            subject = f"Re: {subject}"
+
+        signature = (account.get("signature") or "").strip()
+        full_body = f"{reply_body}\n\n{signature}" if signature else reply_body
+
+        send_result = gmail.send_message(
+            access_token,
+            account["email"],
+            email,
+            subject,
+            full_body,
+            thread_id=enr["thread_id"],
+            in_reply_to_message_id=latest_message_id,
+        )
+
+        new_message_id = None
+        try:
+            sent_msg = gmail.get_message(access_token, send_result["id"])
+            for header in sent_msg.get("payload", {}).get("headers", []):
+                if header.get("name") == "Message-ID":
+                    new_message_id = header.get("value")
+        except Exception:
+            pass
+
+        enr["last_message_id"] = new_message_id
+        enr["updated_at"] = now_utc().isoformat()
+        models.save_enrollment(enr)
+        models.append_log(sequence_id, {"type": "manual_reply", "email": email, "at": now_utc().isoformat()})
+    except Exception as exc:
+        self._send_json(502, {"error": f"Failed to send reply: {str(exc)[:300]}"})
+        return
+
+    self._send_json(200, {"ok": True})

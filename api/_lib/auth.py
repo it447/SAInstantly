@@ -1,29 +1,34 @@
 import os
 import secrets
 
-from .http import SESSION_COOKIE_NAME
-from .redis_client import get_redis
 
-SESSION_TTL_SECONDS = 60 * 60 * 24 * 7  # 7 days
-
-
-def create_session():
-    token = secrets.token_urlsafe(32)
-    get_redis().set(f"sessions:{token}", "1", ex=SESSION_TTL_SECONDS)
-    return token
-
-
-def destroy_session(token):
-    if token:
-        get_redis().delete(f"sessions:{token}")
+def _dashboard_password():
+    return os.environ.get("APP_PASSWORD", "")
 
 
 def is_authenticated(handler):
-    cookies = handler._cookies()
-    token = cookies.get(SESSION_COOKIE_NAME)
-    if not token:
+    # TEMPORARY escape hatch while auth was being debugged: set
+    # DISABLE_AUTH=true in Vercel env vars to skip the password check
+    # entirely. This removes ALL access control - anyone with the URL can
+    # use every feature. Only use on a deployment nobody else can reach yet,
+    # and unset it (redeploy) before any real use.
+    if os.environ.get("DISABLE_AUTH", "").strip().lower() == "true":
+        return True
+
+    expected = _dashboard_password()
+    if not expected:
         return False
-    return get_redis().get(f"sessions:{token}") is not None
+
+    # Normal calls send the password as a header (see public/js/api.js,
+    # which reads it from localStorage on every request). A handful of
+    # protected endpoints are reached via a plain browser navigation instead
+    # of a fetch call (e.g. the "Connect Gmail" link, which has to do a real
+    # redirect to Google) - browsers can't attach custom headers to those,
+    # so those links pass the token as a query param instead.
+    token = handler.headers.get("X-Auth-Token", "")
+    if not token:
+        token = handler._query().get("token", [""])[0]
+    return secrets.compare_digest(token, expected)
 
 
 def require_auth(handler):
@@ -33,11 +38,6 @@ def require_auth(handler):
         return True
     handler._send_json(401, {"error": "unauthorized"})
     return False
-
-
-def check_app_password(password):
-    expected = os.environ.get("APP_PASSWORD", "")
-    return bool(expected) and secrets.compare_digest(password or "", expected)
 
 
 def require_cron_auth(handler):

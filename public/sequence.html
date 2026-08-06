@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sequence — Cold Email Sequencer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<script>document.body.classList.toggle('light-mode', localStorage.getItem('theme') === 'light');</script>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="main">
+    <div class="container">
+    <div class="row" style="align-items:center; justify-content:space-between">
+      <h1 id="title">Sequence</h1>
+      <div style="display:flex; gap:0.75rem; align-items:center">
+        <span class="badge" id="status-badge" style="display:none"></span>
+        <a class="btn secondary" id="edit-link" href="#">Edit sequence</a>
+      </div>
+    </div>
+    <div class="orange-bar"></div>
+    <div class="muted" id="sending-accounts" style="font-size:0.85rem; margin-bottom:1rem"></div>
+
+    <div class="grid stats" id="stats"></div>
+
+    <div class="section card" style="margin-top:2rem">
+      <div class="row" style="align-items:center; justify-content:space-between; margin-bottom:0.5rem">
+        <h2 style="margin:0">Enrolled contacts</h2>
+        <span class="muted" id="filter-label" style="font-size:0.85rem"></span>
+      </div>
+      <table>
+        <thead>
+          <tr><th>Contact</th><th>Status</th><th>Step</th><th>Next send</th><th>Enrolled</th></tr>
+        </thead>
+        <tbody id="contacts-body"></tbody>
+      </table>
+      <div class="empty" id="contacts-empty" style="display:none">No contacts enrolled yet.</div>
+    </div>
+    </div>
+    </main>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    let allContacts = [];
+    let activeFilter = "all";
+    let sequenceId = null;
+
+    const FILTER_LABELS = {
+      all: "All contacts",
+      active: "Currently active",
+      completed: "Completed",
+      replied: "Replied",
+      bounced: "Bounced",
+      "unsubscribed,failed": "Unsubscribed / failed",
+    };
+
+    function statTile(value, label, filterKey) {
+      const clickable = filterKey != null;
+      const attrs = clickable ? ` data-filter="${escapeHtml(filterKey)}" tabindex="0" role="button"` : "";
+      return `<div class="card stat-tile"${attrs}><div class="value">${value}</div><div class="label">${label}</div></div>`;
+    }
+
+    function renderContactsTable() {
+      const tbody = document.getElementById("contacts-body");
+      const empty = document.getElementById("contacts-empty");
+      const filterSet = activeFilter === "all" ? null : new Set(activeFilter.split(","));
+      const filtered = filterSet ? allContacts.filter((c) => filterSet.has(c.status)) : allContacts;
+
+      document.querySelectorAll(".stat-tile[data-filter]").forEach((tile) => {
+        tile.classList.toggle("selected", tile.dataset.filter === activeFilter);
+      });
+      document.getElementById("filter-label").textContent =
+        activeFilter === "all" ? "" : `Filtered: ${FILTER_LABELS[activeFilter] || activeFilter}`;
+
+      tbody.innerHTML = "";
+      if (filtered.length === 0) {
+        empty.textContent = activeFilter === "all" ? "No contacts enrolled yet." : "No contacts match this filter.";
+        empty.style.display = "block";
+        return;
+      }
+      empty.style.display = "none";
+      filtered.forEach((c) => {
+        const name = [c.firstname, c.lastname].filter(Boolean).join(" ");
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${escapeHtml(c.email)}${name ? `<div class="muted" style="font-size:0.8rem">${escapeHtml(name)}</div>` : ""}</td>
+          <td><span class="badge ${c.status}">${escapeHtml(c.status.replace(/_/g, " "))}</span></td>
+          <td>${c.step_index == null ? "—" : `Step ${c.step_index + 1}`}</td>
+          <td>${c.next_send_at ? fmtUnix(c.next_send_at) : "—"}</td>
+          <td>${fmtDate(c.enrolled_at)}</td>`;
+        if (c.status !== "moved_to_other_sequence") {
+          tr.setAttribute("data-clickable", "");
+          tr.addEventListener("click", () => {
+            window.location.href = `/thread.html?email=${encodeURIComponent(c.email)}&sequence_id=${encodeURIComponent(sequenceId)}`;
+          });
+        }
+        tbody.appendChild(tr);
+      });
+    }
+
+    document.getElementById("stats").addEventListener("click", (e) => {
+      const tile = e.target.closest(".stat-tile[data-filter]");
+      if (!tile) return;
+      activeFilter = tile.dataset.filter;
+      renderContactsTable();
+    });
+    document.getElementById("stats").addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      const tile = e.target.closest(".stat-tile[data-filter]");
+      if (!tile) return;
+      e.preventDefault();
+      activeFilter = tile.dataset.filter;
+      renderContactsTable();
+    });
+
+    async function load() {
+      renderNav("");
+      const params = new URLSearchParams(window.location.search);
+      const id = params.get("id");
+      if (!id) {
+        document.getElementById("title").textContent = "No sequence specified";
+        return;
+      }
+      sequenceId = id;
+
+      const { sequence, stats, contacts } = await api(`/api/sequences/detail?id=${encodeURIComponent(id)}`);
+
+      document.title = `${sequence.name} — Cold Email Sequencer`;
+      document.getElementById("title").textContent = sequence.name;
+      document.getElementById("edit-link").href = `/sequences.html?id=${encodeURIComponent(sequence.id)}`;
+      const statusBadge = document.getElementById("status-badge");
+      statusBadge.textContent = sequence.status;
+      statusBadge.className = `badge ${sequence.status}`;
+      statusBadge.style.display = "inline-block";
+
+      document.getElementById("sending-accounts").textContent = sequence.sending_accounts.length
+        ? `Sending from: ${sequence.sending_accounts.join(", ")}`
+        : "Sending from: any connected account";
+
+      document.getElementById("stats").innerHTML = [
+        statTile(stats.total, "Total enrolled", "all"),
+        statTile(stats.active, "Currently active", "active"),
+        statTile(stats.sent, "Emails sent"),
+        statTile(stats.completed, "Completed", "completed"),
+        statTile(stats.replied, "Replied", "replied"),
+        statTile(stats.bounced, "Bounced", "bounced"),
+        statTile(stats.unsubscribed + stats.failed, "Unsubscribed / failed", "unsubscribed,failed"),
+      ].join("");
+
+      allContacts = contacts;
+      activeFilter = "all";
+      renderContactsTable();
+    }
+
+    load().catch((err) => {
+      if (err.message !== "unauthorized") {
+        console.error(err);
+        document.getElementById("title").textContent = "Failed to load sequence";
+      }
+    });
+  </script>
+</body>
+</html>
