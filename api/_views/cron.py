@@ -1,5 +1,7 @@
 import random
+import re
 import time
+from datetime import timedelta
 
 from _lib import deliverability, enrollment, gmail, hubspot_client, models
 from _lib.auth import require_cron_auth
@@ -80,7 +82,8 @@ def _run_send():
 
     per_tick_limit = min(remaining_global, PER_TICK_CAP)
 
-    accounts = models.list_accounts()
+    # Seed accounts (placement testing) are never real campaign senders.
+    accounts = [a for a in models.list_accounts() if a.get("role", "sending") == "sending"]
     remaining_by_account = {
         # Ramps a newly-connected account's effective cap up gradually
         # instead of letting it send at its full configured daily_limit
@@ -336,3 +339,87 @@ def poll_replies(self):
     if not require_cron_auth(self):
         return
     self._send_json(200, {"ok": True, "replies": _run_poll_replies(), "bounces": _run_poll_bounces()})
+
+
+# Gmail inbox-placement testing: runs once daily. Each connected sending
+# account emails every connected seed account with a subject that encodes
+# today's date and its own account id - deterministic, so tomorrow's run can
+# find exactly which messages to check without needing separate "pending
+# test" bookkeeping. Each run therefore does two things: check yesterday's
+# batch (giving Gmail a full day to settle any classification, well more
+# than needed in practice but a safe margin), then send today's.
+PLACEMENT_SUBJECT_PREFIX = "Deliverability check"
+
+
+def _placement_subject(date_str, account_id):
+    return f"{PLACEMENT_SUBJECT_PREFIX} {date_str}-{account_id}"
+
+
+def _run_placement_check():
+    accounts = models.list_accounts()
+    sending_accounts = [a for a in accounts if a.get("status") == "connected" and a.get("role", "sending") == "sending"]
+    seed_accounts = [a for a in accounts if a.get("status") == "connected" and a.get("role") == "seed"]
+
+    if not seed_accounts:
+        return {"ok": True, "skipped": "no seed accounts connected", "checked": 0, "sent": 0}
+
+    today = now_local().strftime("%Y-%m-%d")
+    yesterday = (now_local().date() - timedelta(days=1)).strftime("%Y-%m-%d")
+    subject_pattern = re.compile(rf"{re.escape(PLACEMENT_SUBJECT_PREFIX)} {re.escape(yesterday)}-(\S+)")
+
+    checked = 0
+    for seed in seed_accounts:
+        try:
+            access_token, refreshed = gmail.get_valid_access_token(seed)
+            if refreshed:
+                seed.update(refreshed)
+                models.save_account(seed)
+
+            candidates = gmail.search_messages(access_token, f'subject:"{PLACEMENT_SUBJECT_PREFIX} {yesterday}"', max_results=50)
+            for stub in candidates:
+                try:
+                    full = gmail.get_message_full(access_token, stub["id"])
+                except Exception:
+                    continue
+                headers = {h["name"]: h["value"] for h in full.get("payload", {}).get("headers", [])}
+                match = subject_pattern.search(headers.get("Subject", ""))
+                if not match:
+                    continue
+                sending_account_id = match.group(1)
+                landed_in_inbox = "SPAM" not in (full.get("labelIds") or [])
+                models.record_placement_result(sending_account_id, seed["email"], landed_in_inbox, now_local().isoformat())
+                checked += 1
+        except Exception:
+            # One seed account's search failing (stale token, API hiccup)
+            # shouldn't stop checking the others.
+            continue
+
+    sent = 0
+    test_body = (
+        "This is an automated deliverability test email sent by our internal sending tool, "
+        "to check inbox placement. No action is needed - please leave it as-is."
+    )
+    for account in sending_accounts:
+        try:
+            access_token, refreshed = gmail.get_valid_access_token(account)
+            if refreshed:
+                account.update(refreshed)
+                models.save_account(account)
+        except Exception:
+            continue
+
+        subject = _placement_subject(today, account["id"])
+        for seed in seed_accounts:
+            try:
+                gmail.send_message(access_token, account["email"], seed["email"], subject, test_body)
+                sent += 1
+            except Exception:
+                continue
+
+    return {"ok": True, "checked": checked, "sent": sent}
+
+
+def placement_check(self):
+    if not require_cron_auth(self):
+        return
+    self._send_json(200, _run_placement_check())

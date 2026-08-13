@@ -168,10 +168,12 @@ def check_domain_auth(domain):
 
 # ------------------------------------------------------------ health score
 
-def account_health_score(domain_auth, domain_listed, bounce_rate, warming_up):
+def account_health_score(domain_auth, domain_listed, bounce_rate, warming_up, placement_rate=None):
     """Composite 0-100 health score for one connected account, combining
     domain authentication (SPF/DKIM/DMARC), domain blocklist status, this
-    account's own bounce rate, and warm-up progress. Deliberately
+    account's own bounce rate, warm-up progress, and (once seed accounts are
+    connected) real Gmail inbox-placement test results - the most direct
+    signal available, so it carries the heaviest weight. Deliberately
     transparent (not a black-box number) - `factors` lists exactly what
     contributed and why, each tagged ok=True/False/None (None = neutral/
     informational, not a pass or fail)."""
@@ -179,13 +181,13 @@ def account_health_score(domain_auth, domain_listed, bounce_rate, warming_up):
     factors = []
 
     if domain_auth.get("spf"):
-        score += 15
+        score += 10
         factors.append({"label": "SPF configured", "ok": True})
     else:
         factors.append({"label": "SPF record not found", "ok": False})
 
     if domain_auth.get("dkim"):
-        score += 15
+        score += 10
         factors.append({"label": "DKIM configured", "ok": True})
     else:
         factors.append({"label": "DKIM not found (only checks Google Workspace's default selector)", "ok": False})
@@ -197,29 +199,41 @@ def account_health_score(domain_auth, domain_listed, bounce_rate, warming_up):
         factors.append({"label": "DMARC record not found", "ok": False})
 
     if not domain_listed:
-        score += 20
+        score += 15
         factors.append({"label": "Domain not on SURBL/URIBL", "ok": True})
     else:
         factors.append({"label": "Domain listed on a blocklist", "ok": False})
 
     if bounce_rate is None:
-        score += 30
+        score += 20
         factors.append({"label": "Not enough sends yet to measure bounce rate", "ok": None})
     elif bounce_rate < 0.02:
-        score += 30
+        score += 20
         factors.append({"label": f"Bounce rate {bounce_rate * 100:.1f}%", "ok": True})
     elif bounce_rate < 0.05:
-        score += 15
+        score += 10
         factors.append({"label": f"Bounce rate {bounce_rate * 100:.1f}% (elevated)", "ok": None})
     else:
         factors.append({"label": f"Bounce rate {bounce_rate * 100:.1f}% (high)", "ok": False})
 
     if not warming_up:
-        score += 10
+        score += 5
         factors.append({"label": "Fully ramped up", "ok": True})
     else:
-        score += 5
+        score += 3
         factors.append({"label": "Still in warm-up ramp", "ok": None})
+
+    if placement_rate is None:
+        score += 30
+        factors.append({"label": "Not enough placement tests yet (connect seed accounts)", "ok": None})
+    elif placement_rate >= 0.95:
+        score += 30
+        factors.append({"label": f"{placement_rate * 100:.0f}% of test sends landed in the inbox", "ok": True})
+    elif placement_rate >= 0.80:
+        score += 15
+        factors.append({"label": f"{placement_rate * 100:.0f}% of test sends landed in the inbox (some going to spam)", "ok": None})
+    else:
+        factors.append({"label": f"{placement_rate * 100:.0f}% of test sends landed in the inbox (mostly going to spam)", "ok": False})
 
     if score >= 80:
         grade = "Healthy"

@@ -309,3 +309,29 @@ def save_domain_auth_check(domain, result, checked_at):
     r = get_redis()
     payload = json.dumps({"result": result, "checked_at": checked_at})
     r.set(f"domain_auth_check:{domain.strip().lower()}", payload, ex=BLOCKLIST_CACHE_TTL_SECONDS)
+
+
+# ------------------------------------------------------ placement testing
+
+def record_placement_result(sending_account_id, seed_email, landed_in_inbox, checked_at):
+    incr_stat(f"stats:placement_checked_total:{sending_account_id}")
+    if landed_in_inbox:
+        incr_stat(f"stats:placement_inbox_total:{sending_account_id}")
+    r = get_redis()
+    entry = {"seed_email": seed_email, "landed_in_inbox": landed_in_inbox, "checked_at": checked_at}
+    r.lpush(f"logs:placement:{sending_account_id}", json.dumps(entry))
+    r.ltrim(f"logs:placement:{sending_account_id}", 0, 199)
+
+
+def get_placement_log(sending_account_id, limit=50):
+    r = get_redis()
+    raw = r.lrange(f"logs:placement:{sending_account_id}", 0, limit - 1) or []
+    return [json.loads(v) for v in raw]
+
+
+def placement_rate(sending_account_id, min_checks=3):
+    checked = get_stat(f"stats:placement_checked_total:{sending_account_id}")
+    if checked < min_checks:
+        return None
+    inbox = get_stat(f"stats:placement_inbox_total:{sending_account_id}")
+    return inbox / checked

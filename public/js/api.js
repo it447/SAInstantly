@@ -69,6 +69,36 @@ function renderNav(active) {
     document.body.classList.toggle("light-mode", themeToggle.checked);
     localStorage.setItem("theme", themeToggle.checked ? "light" : "dark");
   });
+
+  setUpMobileNav(el);
+}
+
+// Below a breakpoint the sidebar becomes an off-canvas panel opened by a
+// hamburger button in a topbar - injected here so every page picks it up
+// from this one shared renderNav() call instead of duplicating markup.
+function setUpMobileNav(sidebar) {
+  const topbar = document.createElement("div");
+  topbar.className = "mobile-topbar";
+  topbar.innerHTML = `
+    <button class="hamburger-btn" id="hamburger-btn" aria-label="Open menu" type="button">&#9776;</button>
+    <div class="brand-s">S</div>
+    <div class="brand-name">Cold Email Sequencer</div>`;
+  document.body.insertBefore(topbar, document.body.firstChild);
+
+  const backdrop = document.createElement("div");
+  backdrop.className = "sidebar-backdrop";
+  document.body.appendChild(backdrop);
+
+  function closeSidebar() {
+    sidebar.classList.remove("open");
+    backdrop.classList.remove("open");
+  }
+  topbar.querySelector("#hamburger-btn").addEventListener("click", () => {
+    sidebar.classList.add("open");
+    backdrop.classList.add("open");
+  });
+  backdrop.addEventListener("click", closeSidebar);
+  sidebar.querySelectorAll(".nav-item").forEach((a) => a.addEventListener("click", closeSidebar));
 }
 
 function escapeHtml(str) {
