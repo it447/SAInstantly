@@ -67,10 +67,12 @@
 
     <div class="section card" id="logs-card" style="display:none; margin-top:2rem">
       <h2>Activity log</h2>
+      <div class="table-scroll">
       <table>
         <thead><tr><th>Time</th><th>Event</th><th>Contact</th><th>Detail</th></tr></thead>
         <tbody id="logs-body"></tbody>
       </table>
+      </div>
       <div class="empty" id="logs-empty" style="display:none">No activity yet.</div>
     </div>
     </div>
@@ -119,7 +121,8 @@
     async function loadAccounts() {
       try {
         const { accounts } = await api("/api/accounts/list");
-        connectedAccounts = accounts;
+        // Seed accounts are placement-testing observers only - never valid senders.
+        connectedAccounts = accounts.filter((a) => a.role !== "seed");
       } catch (err) {
         connectedAccounts = [];
       }

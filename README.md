@@ -45,6 +45,16 @@ Python/Vercel serverless functions + Upstash Redis + vanilla JS frontend.
   every sequence email and manual reply it sends - sign-off plus the company's physical postal address, which
   CAN-SPAM requires in every commercial email. Tied to the account rather than a single global line so each
   mailbox can sign off as a real person.
+- **Gmail inbox placement testing**: connect a handful of independent, dedicated "seed" Gmail accounts
+  (Accounts page → "Seed accounts", `?role=seed` on the same OAuth connect flow) that never send anything and
+  are never touched by hand. A daily cron (`/api/cron/placement_check`) has every real sending account email
+  each seed account with a deterministic, date-stamped subject, and checks the *previous* day's batch by
+  reading whether it landed in `INBOX` or `SPAM`. This feeds a real "placement rate" factor into the health
+  score below - seed accounts must be genuinely unrelated Gmail addresses (not other connected sending
+  accounts), since Gmail weights sender/recipient relationship history heavily and mutual testing among
+  already-related business accounts would falsely always land in the inbox.
+- Mobile-responsive frontend: the sidebar collapses into a hamburger-triggered off-canvas panel below 860px,
+  and wide tables scroll horizontally within their card instead of breaking the page layout.
 
 Lead/contact data is never deleted — enrollments are only ever marked `completed`,
 `replied`, `bounced`, `unsubscribed`, or `failed`.
@@ -65,7 +75,8 @@ api/
     accounts.py    Gmail OAuth connect/callback + account management
     sequences.py   sequence CRUD + activity logs
     hubspot.py     API key + list-to-sequence mapping config
-    cron.py        send (every 15 min), poll_replies (every 30 min), hubspot_sync (every 15 min)
+    cron.py        send (every 15 min), poll_replies (every 30 min), hubspot_sync (every 15 min),
+                   placement_check (daily) - sends/scores Gmail seed placement tests
     dashboard.py   stats endpoint
     suppression.py global do-not-contact list: list/add/remove + audit log
 public/            static vanilla JS/HTML/CSS frontend
@@ -78,7 +89,7 @@ public/            static vanilla JS/HTML/CSS frontend
 | `sequences` | hash | `{sequence_id: json(sequence)}` — never hard-deleted, only `archived: true` |
 | `enrollments:{email}` | string | json enrollment record (sequence, step, status, thread info) |
 | `sent:{email}:{sequence_id}` | string | dedup marker — a contact is never enrolled twice in the same sequence |
-| `accounts` | hash | `{account_id: json(account)}` — connected Gmail accounts + OAuth tokens |
+| `accounts` | hash | `{account_id: json(account)}` — connected Gmail accounts + OAuth tokens. `role` is `"sending"` (default, real campaign senders) or `"seed"` (placement-test observers only — excluded from send rotation, domain/blocklist checks, and the sequence editor's account picker) |
 | `logs:{sequence_id}` | list | activity log entries (enrolled / sent / replied / bounced / unsubscribed / completed / errors), newest first, capped at 1000 |
 | `queue:pending` | zset | `{sequence_id}\|{email} -> next_send_at unix ts`, drives the send cron |
 | `active_enrollments` | set | emails with a currently-active enrollment, used by the reply/bounce-poll cron |
@@ -93,6 +104,8 @@ public/            static vanilla JS/HTML/CSS frontend
 | `oauth:state:{state}` | string | CSRF state for the Gmail OAuth flow, TTL 10 min |
 | `stats:sent:{date}` / `stats:sent:{account_id}:{date}` | string | daily send counters (global + per account) |
 | `stats:sent_total:{account_id}` / `stats:bounces_total:{account_id}` | string | lifetime per-account counters, used for the health score's bounce rate |
+| `stats:placement_checked_total:{account_id}` / `stats:placement_inbox_total:{account_id}` | string | lifetime per-sending-account placement test counters (checked vs. landed-in-inbox), used for the health score's placement rate |
+| `logs:placement:{account_id}` | list | placement test results for that sending account (`{seed_email, landed_in_inbox, checked_at}`), newest first, capped at 200 |
 | `stats:enrolled_total`, `stats:active_enrollments`, `stats:replies:{date}`, `stats:replies_total`, `stats:bounces:{date}`, `stats:bounces_total`, `stats:unsubscribes:{date}`, `stats:unsubscribes_total` | string | dashboard counters |
 
 ## Setup
@@ -147,7 +160,23 @@ source that shows real domain/IP reputation, spam-rate, and delivery data straig
 relevant than generic third-party blocklists, which are more useful for setups sending through a dedicated
 IP/custom SMTP server (like Instantly's), which this tool doesn't have.
 
-### 4. HubSpot
+### 4. Gmail seed-based placement testing (optional but recommended)
+
+1. Create 3-5 personal Gmail accounts that have **no prior relationship** with any of your sending accounts -
+   don't reuse an existing personal or work Gmail, and don't use accounts that have ever emailed or been
+   emailed by a sending account. This matters: Gmail weights sender/recipient history heavily, so a mutual
+   test between already-related accounts will land in the inbox regardless of real deliverability and gives a
+   falsely inflated score.
+2. On the Accounts page, use "+ Connect seed account" (under "Seed accounts (placement testing)") to connect
+   each one via the same Google OAuth flow used for sending accounts.
+3. Never manually open, reply to, star, or otherwise touch these inboxes - they need to stay passive so the
+   only signal reaching them is the daily automated test, not something that could artificially train Gmail to
+   treat them as a real contact.
+4. That's it - once at least one seed account is connected, `/api/cron/placement_check` runs daily
+   (schedule in `vercel.json`), and each sending account's health score picks up a real placement-rate factor
+   once it has at least 3 recorded checks (a few days in, at one test per seed account per day).
+
+### 5. HubSpot
 
 Create a private app in HubSpot with the `contacts` scope, and set its access token as the `HUBSPOT_API_KEY`
 environment variable in Vercel. That's the only place it's configured — it's never entered through the UI or
@@ -159,22 +188,22 @@ v3 CRM Lists API — v3 Lists can require scopes or plan tiers that aren't avail
 while v1 has been broadly available for years. The merge-tag property picker still uses the standard v3
 properties-schema endpoint, which is unrelated to the Lists API and unaffected by this.
 
-### 5. Environment variables
+### 6. Environment variables
 
 See `.env.example`. Required: `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`,
 `APP_PASSWORD`, `APP_BASE_URL`, `GOOGLE_CLIENT_ID`,
 `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `CRON_SECRET`.
 
-### 6. Deploy to Vercel
+### 7. Deploy to Vercel
 
 ```
 vercel deploy
 ```
 
-`vercel.json` registers the three cron jobs. **Note:** frequent (sub-daily) cron schedules
+`vercel.json` registers the four cron jobs. **Note:** frequent (sub-daily) cron schedules
 require a Vercel Pro plan — on the Hobby plan, either upgrade or trigger
-`/api/cron/send`, `/api/cron/poll_replies`, `/api/cron/hubspot_sync` from an external
-scheduler (e.g. cron-job.org) with the `Authorization: Bearer $CRON_SECRET` header.
+`/api/cron/send`, `/api/cron/poll_replies`, `/api/cron/hubspot_sync`, `/api/cron/placement_check` from an
+external scheduler (e.g. cron-job.org) with the `Authorization: Bearer $CRON_SECRET` header.
 
 ## Sending behavior
 
@@ -199,13 +228,17 @@ scheduler (e.g. cron-job.org) with the `Authorization: Bearer $CRON_SECRET` head
   like Vercel uses) rather than a real answer, so including it would show a false "Clean" status. See Google
   Postmaster Tools above for a more authoritative check.
 - **Health score**: each connected account gets a transparent 0-100 score (click it to see exactly what
-  contributed) combining real DNS checks for SPF/DKIM/DMARC on its sending domain, that domain's blocklist
-  status, this account's own bounce rate (needs at least 10 sends before it's judged - no data isn't treated as
-  bad data), and warm-up progress. DKIM detection only recognizes Google Workspace's default `google` selector,
-  since a custom selector name isn't discoverable - a "DKIM not found" result there means "couldn't confirm,"
-  not certain proof it's missing. Domain-level checks (auth + blocklist) are shared and cached across every
-  account on the same domain; account-level stats (bounce rate, warm-up) are computed live from Redis, no
-  network calls. `GET /api/accounts/health_status`, `?refresh=1` to force fresh domain checks.
+  contributed): SPF 10, DKIM 10, DMARC 10, domain not blocklisted 15, bounce rate 20 (full credit under 2%,
+  or if there's no data yet)/10 (elevated, 2-5%)/0 (high, 5%+), warm-up progress 5 (fully ramped)/3 (still
+  ramping), and inbox placement rate 30 (95%+ inbox, or no data yet)/15 (80-95%)/0 (under 80%) - placement
+  carries the single heaviest weight since it's the most direct real signal, sourced from the seed-account
+  testing described above (needs at least 3 placement checks before it's judged). DKIM detection only
+  recognizes Google Workspace's default `google` selector, since a custom selector name isn't discoverable - a
+  "DKIM not found" result there means "couldn't confirm," not certain proof it's missing. Domain-level checks
+  (auth + blocklist) are shared and cached across every account on the same domain; account-level stats
+  (bounce rate, warm-up, placement) are computed live from Redis, no network calls beyond the domain checks.
+  `GET /api/accounts/health_status`, `?refresh=1` to force fresh domain checks. Seed accounts (`role: "seed"`)
+  are excluded entirely - they have no health score of their own.
 
 ## Deliverability: deliberately not built
 
@@ -217,13 +250,17 @@ Two Instantly-style features were considered and left out on purpose, not overlo
   Mail Privacy Protection and Gmail's own image proxy both prefetch images regardless of whether a human opened
   the email) and are a common spam-filter trigger in their own right - a bad trade for a domain that's still
   building sending reputation.
-- **Full mailbox warm-up** (automated send/open/reply traffic across a network of seed mailboxes, the way
-  Instantly/Mailreach/Warmup Inbox do it) - this only works if it's plugged into many real mailboxes across
-  many real providers, so the receiving side's spam filters see genuine, varied engagement. A handful of this
-  team's own connected accounts emailing each other wouldn't produce that signal - it would just be internal
-  traffic, giving false confidence without the real effect. The daily-limit ramp-up above covers the practical
-  benefit a small in-house tool can actually deliver; for the full effect, connect accounts through a dedicated
-  warm-up service *before* connecting them here, rather than building a fake warm-up network in this app.
+- **Full mailbox warm-up** (automated send/open/reply *engagement* traffic across a network of seed mailboxes,
+  the way Instantly/Mailreach/Warmup Inbox do it, to actively build sending reputation) - this only works if
+  it's plugged into many real mailboxes across many real providers, so the receiving side's spam filters see
+  genuine, varied engagement. A handful of this team's own connected accounts emailing each other wouldn't
+  produce that signal - it would just be internal traffic, giving false confidence without the real effect.
+  The daily-limit ramp-up above covers the practical benefit a small in-house tool can actually deliver; for
+  the full effect, connect accounts through a dedicated warm-up service *before* connecting them here, rather
+  than building a fake warm-up network in this app. Note this is distinct from the Gmail seed-based
+  **placement testing** described above: that feature only *measures* where mail lands using passive,
+  never-interacted-with seed accounts - it doesn't generate engagement or attempt to build reputation, so it
+  doesn't run into the "internal traffic isn't a real signal" problem this bullet describes.
 
 ## Local development
 

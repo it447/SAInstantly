@@ -39,20 +39,24 @@
 
     <div class="card">
       <h2>Currently suppressed</h2>
+      <div class="table-scroll">
       <table>
         <thead><tr><th>Email</th><th>Reason</th><th>Source</th><th>Added</th><th></th></tr></thead>
         <tbody id="suppression-body"></tbody>
       </table>
+      </div>
       <div class="empty" id="suppression-empty" style="display:none">No one is currently suppressed.</div>
     </div>
 
     <div class="card section" style="margin-top:1.5rem">
       <h2>Audit log</h2>
       <p class="muted" style="font-size:0.85rem">Every add/remove event, kept even after an entry is removed.</p>
+      <div class="table-scroll">
       <table>
         <thead><tr><th>Time</th><th>Action</th><th>Email</th><th>Reason</th></tr></thead>
         <tbody id="audit-body"></tbody>
       </table>
+      </div>
       <div class="empty" id="audit-empty" style="display:none">No activity yet.</div>
     </div>
     </div>

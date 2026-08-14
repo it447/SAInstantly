@@ -15,8 +15,15 @@ def connect(self):
         self._redirect("/login.html")
         return
 
+    role = self._query().get("role", ["sending"])[0]
+    if role not in ("sending", "seed"):
+        role = "sending"
+
     state = new_id("oauth_")
-    get_redis().set(f"oauth:state:{state}", "1", ex=STATE_TTL_SECONDS)
+    # The state value carries the intended role through the OAuth round-trip
+    # (previously just "1") - callback() reads it back to know whether this
+    # is a real sending account or a placement-testing seed.
+    get_redis().set(f"oauth:state:{state}", role, ex=STATE_TTL_SECONDS)
     self._redirect(build_auth_url(state))
 
 
@@ -36,7 +43,8 @@ def callback(self):
 
     r = get_redis()
     state_key = f"oauth:state:{state}"
-    if not r.get(state_key):
+    role = r.get(state_key)
+    if not role:
         self._redirect("/accounts.html?error=invalid_state")
         return
     r.delete(state_key)
@@ -50,9 +58,11 @@ def callback(self):
         self._redirect("/accounts.html?error=oauth_failed")
         return
 
-    if is_protected_domain(email):
+    if role == "sending" and is_protected_domain(email):
         # Never save tokens for a protected domain - not even long enough to
-        # check for an existing refresh_token below.
+        # check for an existing refresh_token below. Doesn't apply to seed
+        # accounts - those are meant to be neutral personal Gmail addresses
+        # unrelated to any of our own domains anyway.
         self._redirect("/accounts.html?error=protected_domain")
         return
 
@@ -76,6 +86,7 @@ def callback(self):
         "token_expires_at": time.time() + tokens.get("expires_in", 3600),
         "daily_limit": existing.get("daily_limit", DEFAULT_DAILY_LIMIT) if existing else DEFAULT_DAILY_LIMIT,
         "status": "connected",
+        "role": existing.get("role", role) if existing else role,
         "connected_at": existing.get("connected_at") if existing else now_utc().isoformat(),
         "updated_at": now_utc().isoformat(),
     }
@@ -92,6 +103,7 @@ def _public_account(account):
         "email": account["email"],
         "provider": account.get("provider", "gmail"),
         "status": account.get("status", "connected"),
+        "role": account.get("role", "sending"),
         "daily_limit": daily_limit,
         "effective_daily_limit": effective_limit,
         "warming_up": effective_limit < daily_limit,
@@ -116,7 +128,11 @@ def blocklist_status(self):
         return
 
     force_refresh = self._query().get("refresh", ["0"])[0] == "1"
-    domains = sorted({a["email"].split("@", 1)[1] for a in models.list_accounts() if a.get("status") == "connected" and "@" in a.get("email", "")})
+    domains = sorted({
+        a["email"].split("@", 1)[1]
+        for a in models.list_accounts()
+        if a.get("status") == "connected" and a.get("role", "sending") == "sending" and "@" in a.get("email", "")
+    })
 
     out = []
     for domain in domains:
@@ -152,7 +168,10 @@ def health_status(self):
         return
 
     force_refresh = self._query().get("refresh", ["0"])[0] == "1"
-    accounts = [a for a in models.list_accounts() if a.get("status") == "connected"]
+    accounts = [
+        a for a in models.list_accounts()
+        if a.get("status") == "connected" and a.get("role", "sending") == "sending"
+    ]
 
     domain_cache = {}
     out = []
@@ -188,7 +207,9 @@ def health_status(self):
         configured_limit = max(int(account.get("daily_limit", 0)), 0)
         warming_up = deliverability.effective_daily_limit(account) < configured_limit
 
-        health = deliverability.account_health_score(domain_info["auth"], domain_info["listed"], bounce_rate, warming_up)
+        placement = models.placement_rate(account["id"])
+
+        health = deliverability.account_health_score(domain_info["auth"], domain_info["listed"], bounce_rate, warming_up, placement)
 
         out.append({
             "account_id": account["id"],
@@ -198,6 +219,16 @@ def health_status(self):
         })
 
     self._send_json(200, {"accounts": out})
+
+
+def placement_log(self):
+    if not require_auth(self):
+        return
+    account_id = self._query().get("account_id", [None])[0]
+    if not account_id:
+        self._send_json(400, {"error": "account_id is required"})
+        return
+    self._send_json(200, {"entries": models.get_placement_log(account_id)})
 
 
 def update(self):
