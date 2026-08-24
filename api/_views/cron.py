@@ -66,7 +66,7 @@ def _build_body(step, contact, account):
     signature = (account.get("signature") or "").strip()
     if signature:
         parts.append(signature)
-    parts.append("---\nReply STOP to unsubscribe.")
+    parts.append("---\nReply STOP if you don't want me to contact you anymore.")
     return "\n\n".join(parts)
 
 

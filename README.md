@@ -29,8 +29,9 @@ Python/Vercel serverless functions + Upstash Redis + vanilla JS frontend.
   Gmail, with a reply box to respond right there. Clicking a stat tile (Active/Completed/Replied/Bounced/
   Unsubscribed+failed) filters the contacts table to just that bucket
 - Reply detection (cron every 30 min) that stops a contact's sequence automatically — this is also how
-  opt-outs are handled: every email ends with a plain-text "Reply STOP to unsubscribe" line rather than a
-  clickable link, and any reply (STOP or otherwise) stops that contact's sequence for good
+  opt-outs are handled: every email ends with a plain-text "Reply STOP if you don't want me to contact you
+  anymore" line rather than a clickable link, and any reply (STOP or otherwise) stops that contact's sequence
+  for good
 - Bounce detection (same cron tick as reply detection) marks a contact `bounced` and stops their sequence.
   Searches each connected account's own inbox for bounce-shaped messages (from mailer-daemon/postmaster, or a
   "delivery status notification"/"undelivered mail" subject) and confirms which contact it's about by matching
