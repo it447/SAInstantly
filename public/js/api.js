@@ -50,6 +50,9 @@ function renderNav(active) {
         )
         .join("")}
     </nav>
+    <div class="sidebar-user muted" style="font-size:0.75rem; padding:0 0.5rem 0.5rem; word-break:break-all">
+      ${escapeHtml(localStorage.getItem("user_email") || "")}
+    </div>
     <div class="sidebar-footer">
       <label class="toggle" title="Toggle light/dark mode">
         <input type="checkbox" id="theme-toggle">
@@ -58,8 +61,15 @@ function renderNav(active) {
       <button id="logout-btn" class="nav-item" type="button">Log out</button>
     </div>`;
 
-  document.getElementById("logout-btn").addEventListener("click", () => {
+  document.getElementById("logout-btn").addEventListener("click", async () => {
+    const token = authToken();
     localStorage.removeItem("auth_token");
+    localStorage.removeItem("user_email");
+    if (token) {
+      // Best-effort - the local token is already cleared either way, so a
+      // failed request here just leaves an unused session to expire on its own.
+      fetch("/api/auth/logout", { method: "POST", headers: { "X-Auth-Token": token } }).catch(() => {});
+    }
     window.location.href = "/login.html";
   });
 

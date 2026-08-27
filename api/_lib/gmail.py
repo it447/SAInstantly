@@ -19,6 +19,13 @@ SCOPES = [
     "openid",
 ]
 
+# Separate, narrower scope/redirect for signing into the app itself (see
+# _views/auth.py) - this only needs to identify who's signing in, not send or
+# read mail, so it doesn't need gmail.send/gmail.readonly or offline access.
+# Uses the same GOOGLE_CLIENT_ID/SECRET as account-connect, but its own
+# redirect URI, which must also be registered on that OAuth client.
+LOGIN_SCOPES = ["openid", "https://www.googleapis.com/auth/userinfo.email"]
+
 
 def build_auth_url(state):
     params = {
@@ -33,6 +40,21 @@ def build_auth_url(state):
     return f"{AUTH_URL}?{urlencode(params)}"
 
 
+def build_login_auth_url(state, hd=None):
+    params = {
+        "client_id": os.environ["GOOGLE_CLIENT_ID"],
+        "redirect_uri": os.environ["GOOGLE_LOGIN_REDIRECT_URI"],
+        "response_type": "code",
+        "scope": " ".join(LOGIN_SCOPES),
+        "state": state,
+    }
+    if hd:
+        # UI hint only (pre-filters Google's account chooser) - the real
+        # restriction is the server-side domain check after the callback.
+        params["hd"] = hd
+    return f"{AUTH_URL}?{urlencode(params)}"
+
+
 def exchange_code(code):
     resp = requests.post(
         TOKEN_URL,
@@ -41,6 +63,22 @@ def exchange_code(code):
             "client_id": os.environ["GOOGLE_CLIENT_ID"],
             "client_secret": os.environ["GOOGLE_CLIENT_SECRET"],
             "redirect_uri": os.environ["GOOGLE_REDIRECT_URI"],
+            "grant_type": "authorization_code",
+        },
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def exchange_login_code(code):
+    resp = requests.post(
+        TOKEN_URL,
+        data={
+            "code": code,
+            "client_id": os.environ["GOOGLE_CLIENT_ID"],
+            "client_secret": os.environ["GOOGLE_CLIENT_SECRET"],
+            "redirect_uri": os.environ["GOOGLE_LOGIN_REDIRECT_URI"],
             "grant_type": "authorization_code",
         },
         timeout=15,
