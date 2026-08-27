@@ -8,9 +8,13 @@ Python/Vercel serverless functions + Upstash Redis + vanilla JS frontend.
 - Scale Army's shared design system: navy/cream/orange palette, Playfair Display + DM Sans, dark mode by
   default with a light-mode toggle (persisted in `localStorage`), sidebar navigation matching the other
   internal tools
-- Password-protected login. The typed password is sent as an `X-Auth-Token` header on every request and
-  checked directly against `APP_PASSWORD` - no server-side session, cookies, or Redis storage involved. The
-  frontend keeps it in `localStorage` after a successful login
+- **Google-authenticated login**, restricted to `ALLOWED_LOGIN_DOMAINS` (defaults to `scalearmy.com`) -
+  anyone outside that domain is rejected server-side after the Google OAuth callback, regardless of what
+  Google account they sign in with. On success the backend mints an opaque session token (stored in Redis with
+  a 30-day TTL), which the frontend keeps in `localStorage` and sends as an `X-Auth-Token` header on every
+  request - the same header slot the old shared-password scheme used, so the rest of the app didn't need to
+  change. The signed-in user's email is shown in the sidebar; "Log out" clears the token both client-side and
+  in Redis
 - Connect one or more Gmail accounts via OAuth, for inbox rotation. Mailboxes on `PROTECTED_DOMAINS`
   (defaults to `scalearmy.com`) are refused outright, so the primary domain can never be connected here and
   mixed into cold-outreach sending — only dedicated cold-outreach domains should be connected
@@ -72,7 +76,7 @@ api/
   [...path].py     single entrypoint; dispatches (method, path) -> view function
   _lib/            shared helpers (redis, auth, gmail, hubspot, scheduling, models)
   _views/
-    auth.py        login (header test) / logout / auth status
+    auth.py        Google OAuth login/callback (domain-restricted) / logout / auth status
     accounts.py    Gmail OAuth connect/callback + account management
     sequences.py   sequence CRUD + activity logs
     hubspot.py     API key + list-to-sequence mapping config
@@ -87,6 +91,8 @@ public/            static vanilla JS/HTML/CSS frontend
 
 | Key | Type | Purpose |
 |---|---|---|
+| `session:{token}` | string | `{email, created_at}` — an app login session, created after a successful Google OAuth callback, TTL 30 days; deleted on logout |
+| `oauth:login_state:{state}` | string | CSRF state for the app-login Google OAuth flow, TTL 10 min (separate from `oauth:state:{state}` below, which is for connecting sending/seed accounts) |
 | `sequences` | hash | `{sequence_id: json(sequence)}` — never hard-deleted, only `archived: true` |
 | `enrollments:{email}` | string | json enrollment record (sequence, step, status, thread info) |
 | `sent:{email}:{sequence_id}` | string | dedup marker — a contact is never enrolled twice in the same sequence |
@@ -119,15 +125,24 @@ Marketplace integration. The Vercel integration injects the credentials under it
 (`KV_REST_API_URL` / `KV_REST_API_TOKEN`) - the code checks for either naming automatically, so no manual
 renaming is needed either way.
 
-### 2. Google OAuth (Gmail)
+### 2. Google OAuth (Gmail + app login)
+
+One OAuth client covers both the sending/seed account-connect flow and signing into the app itself - they use
+different scopes and redirect URIs, but the same Client ID/Secret.
 
 1. In the [Google Cloud Console](https://console.cloud.google.com/apis/credentials), create an
    OAuth 2.0 Client ID (Web application).
 2. Enable the **Gmail API** for the project.
-3. Add an authorized redirect URI: `https://<your-deployment>/api/accounts/callback`.
-4. Add scopes `gmail.send` and `gmail.readonly` (and `userinfo.email`) — if the app is in
-   "Testing" publishing status, add every Gmail address you plan to connect as a test user.
-5. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`.
+3. Add two authorized redirect URIs:
+   - `https://<your-deployment>/api/accounts/callback` (connecting sending/seed Gmail accounts)
+   - `https://<your-deployment>/api/auth/google_callback` (signing into the app)
+4. Add scopes `gmail.send`, `gmail.readonly`, and `userinfo.email` — if the app is in "Testing" publishing
+   status, add every Google account you plan to connect *or* sign in with as a test user (this includes every
+   `@scalearmy.com` teammate who needs to log in, until the app is published).
+5. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `GOOGLE_LOGIN_REDIRECT_URI`.
+6. Login is restricted server-side to `ALLOWED_LOGIN_DOMAINS` (defaults to `scalearmy.com`) - anyone signing in
+   with a Google account outside that domain is rejected after the OAuth callback, regardless of what Google's
+   account picker shows.
 
 ### 3. Deliverability: DKIM / SPF / DMARC
 
@@ -192,8 +207,8 @@ properties-schema endpoint, which is unrelated to the Lists API and unaffected b
 ### 6. Environment variables
 
 See `.env.example`. Required: `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`,
-`APP_PASSWORD`, `APP_BASE_URL`, `GOOGLE_CLIENT_ID`,
-`GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `CRON_SECRET`.
+`APP_BASE_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`,
+`GOOGLE_LOGIN_REDIRECT_URI`, `CRON_SECRET`. Optional: `ALLOWED_LOGIN_DOMAINS` (defaults to `scalearmy.com`).
 
 ### 7. Deploy to Vercel
 

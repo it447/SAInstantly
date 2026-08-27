@@ -12,39 +12,35 @@
     <div class="card login-card">
       <div class="brand-s">S</div>
       <h1>Cold Email Sequencer</h1>
-      <form id="login-form">
-        <div class="field">
-          <label for="password">Password</label>
-          <input type="password" id="password" name="password" autofocus required>
-        </div>
-        <button class="btn" type="submit" style="width:100%">Log in</button>
-        <div class="error" id="error" style="display:none"></div>
-      </form>
+      <p class="muted" style="margin-bottom:1.5rem">Sign in with your Scale Army Google account.</p>
+      <a class="btn" id="google-login-btn" href="/api/auth/google_login" style="width:100%; justify-content:center">
+        Sign in with Google
+      </a>
+      <div class="error" id="error" style="display:none"></div>
     </div>
   </div>
   <script>
-    // Deliberately not using the shared api() helper here: it auto-redirects
-    // to this same page on a 401, which would just silently reload this
-    // form before a failed attempt could ever be shown.
-    document.getElementById("login-form").addEventListener("submit", async (e) => {
-      e.preventDefault();
+    const ERROR_MESSAGES = {
+      oauth_failed: "Could not complete Google sign-in. Please try again.",
+      invalid_state: "That sign-in link expired. Please try again.",
+      domain_not_allowed: "Only Scale Army Google accounts can access this tool.",
+    };
+
+    const params = new URLSearchParams(window.location.search);
+    const sessionToken = params.get("session_token");
+    if (sessionToken) {
+      // Arriving back from /api/auth/google_callback's redirect - stash the
+      // session token (used as the X-Auth-Token header from here on, same
+      // spot the old password lived) and drop into the app.
+      localStorage.setItem("auth_token", sessionToken);
+      const email = params.get("email");
+      if (email) localStorage.setItem("user_email", email);
+      window.location.href = "/index.html";
+    } else if (params.get("error")) {
       const errorEl = document.getElementById("error");
-      errorEl.style.display = "none";
-      const password = document.getElementById("password").value;
-      try {
-        const res = await fetch("/api/auth/login", { headers: { "X-Auth-Token": password } });
-        if (!res.ok) {
-          errorEl.textContent = "Incorrect password.";
-          errorEl.style.display = "block";
-          return;
-        }
-        localStorage.setItem("auth_token", password);
-        window.location.href = "/index.html";
-      } catch (err) {
-        errorEl.textContent = "Could not reach the server. Please try again.";
-        errorEl.style.display = "block";
-      }
-    });
+      errorEl.textContent = ERROR_MESSAGES[params.get("error")] || "Something went wrong signing in.";
+      errorEl.style.display = "block";
+    }
   </script>
 </body>
 </html>
