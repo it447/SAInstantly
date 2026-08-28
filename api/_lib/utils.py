@@ -133,7 +133,10 @@ def next_send_time_soon(min_delay_seconds=60, max_delay_seconds=600):
     return int(target.astimezone(timezone.utc).timestamp())
 
 
-MERGE_TAG_RE = re.compile(r"\{\{\s*([a-zA-Z0-9_]+)\s*\}\}")
+# A tag can optionally carry a fallback after a pipe - {{firstname|there}} -
+# used verbatim when the contact's property is missing or blank, instead of
+# rendering as an empty string.
+MERGE_TAG_RE = re.compile(r"\{\{\s*([a-zA-Z0-9_]+)\s*(?:\|([^}]*))?\}\}")
 
 
 def render_merge_tags(text, contact):
@@ -141,15 +144,17 @@ def render_merge_tags(text, contact):
         return text
 
     def _sub(match):
-        key = match.group(1)
+        key, default = match.group(1), match.group(2)
         value = contact.get(key)
-        return value if value not in (None, "") else ""
+        if value not in (None, ""):
+            return value
+        return default if default is not None else ""
 
     return MERGE_TAG_RE.sub(_sub, text)
 
 
 def merge_tags_in(text):
-    return set(MERGE_TAG_RE.findall(text or ""))
+    return {name for name, _default in MERGE_TAG_RE.findall(text or "")}
 
 
 def sequence_merge_tag_properties(sequence):

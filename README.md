@@ -22,7 +22,10 @@ Python/Vercel serverless functions + Upstash Redis + vanilla JS frontend.
   property names (e.g. `{{firstname}}`, `{{company}}`) so the sequence editor's "Insert merge tag" picker
   can search your actual HubSpot contact properties (`GET /api/hubspot/properties`) and drop the right tag
   in with a click — no HubSpot key connected yet just falls back to a small default set
-  (`email`, `firstname`, `lastname`, `company`)
+  (`email`, `firstname`, `lastname`, `company`). A tag can carry a fallback with `{{property|fallback text}}`
+  (e.g. `{{firstname|there}}`), used whenever that contact's property comes back missing or blank instead of
+  rendering as an empty string — the picker has an optional "Fallback text if empty" field that builds this
+  for you
 - HubSpot list → sequence connection: new list members are auto-enrolled (deduped so a contact is never enrolled twice in the same sequence)
 - Scheduled sending (cron every 15 min): a contact's first email in a sequence goes out within a few minutes
   of enrollment (so leads hear back within ~30 minutes), later steps spread across the 8am–6pm ET window;
