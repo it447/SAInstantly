@@ -50,7 +50,12 @@
 
         <div class="muted" style="font-size:0.85rem; margin-bottom:1rem">
           Click <strong>Insert merge tag</strong> on a step to search your HubSpot contact properties and drop one
-          into whichever field you last clicked. A "Reply STOP if you don't want me to contact you anymore" line is appended to every email automatically.
+          into whichever field you last clicked - fill in "Fallback text if empty" first to insert a tag like
+          <code>{{firstname|there}}</code> that falls back to that text when the contact's property is blank.
+          Select some text and click <strong>Add link</strong> to attach a URL to it - emails stay plain text, so
+          it sends as "text (https://…)" rather than a hidden link, but it's still a real, clickable URL in any
+          mail client. A "Reply STOP if you don't want me to contact you anymore" line is appended to every email
+          automatically.
         </div>
 
         <div id="steps"></div>
@@ -98,8 +103,12 @@
         <button type="button" class="btn secondary token-btn">+ Insert merge tag</button>
         <div class="token-dropdown" style="display:none">
           <input type="text" class="token-search" placeholder="Search contact properties…">
+          <input type="text" class="token-fallback" placeholder="Fallback text if empty (optional)">
           <div class="token-list"></div>
         </div>
+      </div>
+      <div class="link-picker">
+        <button type="button" class="btn secondary link-btn">+ Add link</button>
       </div>
     </div>
   </template>
@@ -176,6 +185,7 @@
       const tokenBtn = card.querySelector(".token-btn");
       const tokenDropdown = card.querySelector(".token-dropdown");
       const tokenSearch = card.querySelector(".token-search");
+      const tokenFallback = card.querySelector(".token-fallback");
       const tokenList = card.querySelector(".token-list");
 
       function renderTokenList(filter) {
@@ -193,7 +203,9 @@
           : '<div class="muted" style="padding:0.4rem 0.5rem">No matches</div>';
         tokenList.querySelectorAll(".token-item").forEach((item) => {
           item.addEventListener("click", () => {
-            insertAtCursor(lastFocused, `{{${item.dataset.name}}}`);
+            const fallback = tokenFallback.value.trim();
+            const tag = fallback ? `{{${item.dataset.name}|${fallback}}}` : `{{${item.dataset.name}}}`;
+            insertAtCursor(lastFocused, tag);
             tokenDropdown.style.display = "none";
           });
         });
@@ -205,11 +217,14 @@
         if (!isOpen) {
           tokenDropdown.style.display = "block";
           tokenSearch.value = "";
+          tokenFallback.value = "";
           renderTokenList("");
           tokenSearch.focus();
         }
       });
       tokenSearch.addEventListener("input", () => renderTokenList(tokenSearch.value));
+
+      wireLinkInsert(card.querySelector(".link-btn"), () => lastFocused);
     }
 
     document.addEventListener("click", (e) => {

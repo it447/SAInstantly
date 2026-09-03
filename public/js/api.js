@@ -111,6 +111,70 @@ function setUpMobileNav(sidebar) {
   sidebar.querySelectorAll(".nav-item").forEach((a) => a.addEventListener("click", closeSidebar));
 }
 
+// Wires a "+ Add link" button to insert a [text](url) tag into whichever
+// textarea getTarget() currently points at - selected text becomes the link
+// text, or "link" if nothing was selected. Rendered at send time as
+// "text (url)" (see api/_lib/utils.py render_links) since emails here stay
+// plain text - the URL is never hidden, just placed next to its label.
+function wireLinkInsert(button, getTarget) {
+  button.addEventListener("click", () => {
+    const existing = document.querySelector(".link-insert-panel");
+    if (existing) {
+      existing.remove();
+      return;
+    }
+    const textarea = getTarget();
+    if (!textarea) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selectedText = textarea.value.slice(start, end);
+
+    const panel = document.createElement("div");
+    panel.className = "link-insert-panel";
+    panel.innerHTML = `
+      <input type="text" class="link-url-input" placeholder="https://example.com">
+      <button type="button" class="btn link-insert-confirm">Insert</button>`;
+    button.insertAdjacentElement("afterend", panel);
+    const urlInput = panel.querySelector(".link-url-input");
+    urlInput.focus();
+
+    function close() {
+      panel.remove();
+    }
+    function commit() {
+      let url = urlInput.value.trim();
+      if (!url) {
+        close();
+        return;
+      }
+      if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+      const text = selectedText || "link";
+      const tag = `[${text}](${url})`;
+      textarea.value = textarea.value.slice(0, start) + tag + textarea.value.slice(end);
+      const pos = start + tag.length;
+      textarea.focus();
+      textarea.setSelectionRange(pos, pos);
+      close();
+    }
+    panel.querySelector(".link-insert-confirm").addEventListener("click", commit);
+    urlInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        commit();
+      }
+      if (e.key === "Escape") close();
+    });
+    setTimeout(() => {
+      document.addEventListener("click", function onDocClick(e) {
+        if (!panel.contains(e.target) && e.target !== button) {
+          panel.remove();
+          document.removeEventListener("click", onDocClick);
+        }
+      });
+    }, 0);
+  });
+}
+
 function escapeHtml(str) {
   return String(str == null ? "" : str).replace(/[&<>"']/g, (c) => ({
     "&": "&amp;",
