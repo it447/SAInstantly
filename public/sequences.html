@@ -51,8 +51,11 @@
         <div class="muted" style="font-size:0.85rem; margin-bottom:1rem">
           Click <strong>Insert merge tag</strong> on a step to search your HubSpot contact properties and drop one
           into whichever field you last clicked - fill in "Fallback text if empty" first to insert a tag like
-          <code>{{firstname|there}}</code> that falls back to that text when the contact's property is blank. A
-          "Reply STOP if you don't want me to contact you anymore" line is appended to every email automatically.
+          <code>{{firstname|there}}</code> that falls back to that text when the contact's property is blank.
+          Select some text and click <strong>Add link</strong> to attach a URL to it - emails stay plain text, so
+          it sends as "text (https://…)" rather than a hidden link, but it's still a real, clickable URL in any
+          mail client. A "Reply STOP if you don't want me to contact you anymore" line is appended to every email
+          automatically.
         </div>
 
         <div id="steps"></div>
@@ -103,6 +106,9 @@
           <input type="text" class="token-fallback" placeholder="Fallback text if empty (optional)">
           <div class="token-list"></div>
         </div>
+      </div>
+      <div class="link-picker">
+        <button type="button" class="btn secondary link-btn">+ Add link</button>
       </div>
     </div>
   </template>
@@ -217,6 +223,8 @@
         }
       });
       tokenSearch.addEventListener("input", () => renderTokenList(tokenSearch.value));
+
+      wireLinkInsert(card.querySelector(".link-btn"), () => lastFocused);
     }
 
     document.addEventListener("click", (e) => {

@@ -193,6 +193,16 @@ label { font-size: 0.85rem; color: var(--muted); display: block; margin-bottom: 
 .token-item:hover { background: rgba(255,100,50,0.12); }
 .token-item .name { color: var(--muted); font-size: 0.75rem; margin-top: 0.1rem; }
 
+.link-picker { position: relative; display: inline-block; margin-left: 0.5rem; }
+.link-insert-panel {
+  position: absolute; z-index: 20; top: 100%; left: 0; margin-top: 0.35rem;
+  display: flex; gap: 0.4rem; align-items: center; width: 300px;
+  background: var(--navy-deep); border: 1px solid var(--border2); border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0,0,0,.35); padding: 0.5rem;
+}
+.link-insert-panel input { flex: 1; margin: 0; }
+.link-insert-panel .btn { flex: 0; white-space: nowrap; padding: 0.5rem 0.75rem; }
+
 .muted { color: var(--muted); }
 .error, .success {
   font-size: 0.88rem; margin-top: 0.75rem; padding: 0.75rem 1rem;

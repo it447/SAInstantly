@@ -5,7 +5,7 @@ from datetime import timedelta
 
 from _lib import deliverability, enrollment, gmail, hubspot_client, models
 from _lib.auth import require_cron_auth
-from _lib.utils import now_local, render_merge_tags, send_window_hours, sequence_merge_tag_properties
+from _lib.utils import now_local, render_links, render_merge_tags, send_window_hours, sequence_merge_tag_properties
 
 def _sync_mapping(mapping, api_key):
     list_id = mapping["list_id"]
@@ -61,7 +61,7 @@ def _in_send_window():
 
 
 def _build_body(step, contact, account):
-    rendered = render_merge_tags(step["body"], contact.get("properties", {}))
+    rendered = render_links(render_merge_tags(step["body"], contact.get("properties", {})))
     parts = [rendered]
     signature = (account.get("signature") or "").strip()
     if signature:
@@ -128,7 +128,7 @@ def _run_send():
 
         step = steps[step_index]
         contact = enr["contact"]
-        subject = render_merge_tags(step["subject"], contact.get("properties", {}))
+        subject = render_links(render_merge_tags(step["subject"], contact.get("properties", {})))
 
         try:
             body = _build_body(step, contact, account)

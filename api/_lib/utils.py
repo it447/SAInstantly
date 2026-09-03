@@ -157,6 +157,20 @@ def merge_tags_in(text):
     return {name for name, _default in MERGE_TAG_RE.findall(text or "")}
 
 
+# Emails stay plain text on purpose (see README - links/HTML are a deliverability
+# trade-off this tool avoids), so a link can't hide its URL under different
+# display text the way a real <a href> would. [text](url) instead renders as
+# "text (url)" - a real, clickable URL in any mail client, always shown next to
+# the text describing it rather than disguised.
+LINK_RE = re.compile(r"\[([^\[\]]+)\]\((https?://[^\s()]+)\)")
+
+
+def render_links(text):
+    if not text:
+        return text
+    return LINK_RE.sub(lambda m: f"{m.group(1)} ({m.group(2)})", text)
+
+
 def sequence_merge_tag_properties(sequence):
     """Every {{property}} referenced across a sequence's steps, plus `email`
     (always needed for dedup/sending/threading)."""

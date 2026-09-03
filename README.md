@@ -26,6 +26,10 @@ Python/Vercel serverless functions + Upstash Redis + vanilla JS frontend.
   (e.g. `{{firstname|there}}`), used whenever that contact's property comes back missing or blank instead of
   rendering as an empty string — the picker has an optional "Fallback text if empty" field that builds this
   for you
+- **Embedded links, kept plain-text**: select text in a step's subject/body (or in a manual reply) and click
+  "Add link" to attach a URL — stored as `[text](url)`. Since every email here is still sent as plain text on
+  purpose (see Deliverability below), it renders as `text (https://…)` rather than a hidden `<a href>` link —
+  a real, clickable URL in any mail client, always shown next to whatever it's describing instead of disguised
 - HubSpot list → sequence connection: new list members are auto-enrolled (deduped so a contact is never enrolled twice in the same sequence)
 - Scheduled sending (cron every 15 min): a contact's first email in a sequence goes out within a few minutes
   of enrollment (so leads hear back within ~30 minutes), later steps spread across the 8am–6pm ET window;
@@ -264,8 +268,10 @@ external scheduler (e.g. cron-job.org) with the `Authorization: Bearer $CRON_SEC
 Two Instantly-style features were considered and left out on purpose, not overlooked:
 
 - **Open/click tracking** - would require switching every email from plain text to HTML (a tracking pixel or
-  rewritten link doesn't exist in plain text), which cuts directly against the plain-text, no-link approach
-  this tool already uses for deliverability. Tracking pixels are also an increasingly unreliable signal (Apple
+  a link rewritten through a tracking redirect doesn't exist in plain text), which cuts directly against the
+  plain-text approach this tool uses for deliverability. A plain URL can still appear in an email (see
+  Features above) - it's just always shown as itself, never disguised or routed through a tracking domain.
+  Tracking pixels are also an increasingly unreliable signal (Apple
   Mail Privacy Protection and Gmail's own image proxy both prefetch images regardless of whether a human opened
   the email) and are a common spam-filter trigger in their own right - a bad trade for a domain that's still
   building sending reputation.

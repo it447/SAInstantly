@@ -28,6 +28,9 @@
       <div class="field">
         <textarea id="reply-body" placeholder="Type your reply…" rows="6"></textarea>
       </div>
+      <div class="link-picker" style="margin-left:0; margin-bottom:1rem">
+        <button type="button" class="btn secondary" id="reply-link-btn">+ Add link</button>
+      </div>
       <button class="btn" id="send-reply-btn">Send reply</button>
       <div class="error" id="reply-error" style="display:none"></div>
       <div class="success" id="reply-success" style="display:none"></div>
@@ -91,6 +94,8 @@
         )
         .join("");
     }
+
+    wireLinkInsert(document.getElementById("reply-link-btn"), () => document.getElementById("reply-body"));
 
     document.getElementById("send-reply-btn").addEventListener("click", async () => {
       const errorEl = document.getElementById("reply-error");
