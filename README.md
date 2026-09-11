@@ -28,20 +28,16 @@ Python/Vercel serverless functions + Upstash Redis + vanilla JS frontend.
   (e.g. `{{firstname|there}}`), used whenever that contact's property comes back missing or blank instead of
   rendering as an empty string — the picker has an optional "Fallback text if empty" field that builds this
   for you
-- **Embedded links, kept plain-text**: select text in a step's subject/body (or in a manual reply) and click
-  "Add link" to attach a URL — stored as `[text](url)`. Since every email here is still sent as plain text on
-  purpose (see Deliverability below), it renders as `text (https://…)` rather than a hidden `<a href>` link —
-  a real, clickable URL in any mail client, always shown next to whatever it's describing instead of disguised
-- **Bold/italic/underline, kept plain-text**: select text and click **B**/*I*/<u>U</u>, or type `**bold**`,
-  `*italic*`, `__underline__` directly — rendered at send time as real Unicode "styled" characters (the same
-  trick fancy-text generators use, e.g. **𝐁𝐨𝐥𝐝**), not markup, since a plain-text email has no formatting layer
-  to apply markup to. Only works for standard English letters/numbers — accented letters, emoji, and non-Latin
-  scripts pass through unstyled rather than break, and a URL is never restyled so a bolded link stays a real,
-  working address. Pasted text that already contains `**`/`*`/`__` (e.g. a markdown-formatted AI draft) gets
-  interpreted the same way, which can produce unwanted styling — click **Show preview** on a step (or the reply
-  box) to see the exact plain-text output, links and styling included, before saving or sending. Nested markers
-  (e.g. italic inside bold) aren't parsed correctly and will look wrong in the preview - a sign to remove the
-  inner marker rather than something the preview itself gets wrong
+- **Real formatting — links, bold, italic, underline**: select text in a step's subject/body (or a manual reply)
+  and click **Add link** or **B**/*I*/<u>U</u>, or type the markdown-style syntax directly (`[text](url)`,
+  `**bold**`, `*italic*`, `__underline__`). Every email sends as `multipart/alternative` — a real HTML part
+  (genuine `<a href>`/`<strong>`/`<em>`/`<u>` tags) alongside a clean plain-text fallback in the same message, so
+  it renders correctly in any mail client. This isn't a deliverability trade-off: the actual risk this tool
+  avoids is open/click *tracking* specifically (a tracking pixel, or a link rewritten through a redirect
+  domain) — see Deliverability below — not HTML formatting itself, which every legitimate business email uses.
+  No tracking pixel and no link rewriting were added; links point straight at their real destination. Markers
+  properly nest (`**bold with *italic* inside**` renders correctly) — click **Show preview** on a step or the
+  reply box to see the exact rendered result before saving or sending
 - HubSpot list → sequence connection: new list members are auto-enrolled (deduped so a contact is never enrolled twice in the same sequence)
 - **Add contacts directly, no HubSpot required**: on a sequence's detail page, paste a list of email addresses
   (one per line, or comma/semicolon-separated) to enroll them immediately — goes through the exact same
@@ -284,14 +280,13 @@ external scheduler (e.g. cron-job.org) with the `Authorization: Bearer $CRON_SEC
 
 Two Instantly-style features were considered and left out on purpose, not overlooked:
 
-- **Open/click tracking** - would require switching every email from plain text to HTML (a tracking pixel or
-  a link rewritten through a tracking redirect doesn't exist in plain text), which cuts directly against the
-  plain-text approach this tool uses for deliverability. A plain URL can still appear in an email (see
-  Features above) - it's just always shown as itself, never disguised or routed through a tracking domain.
-  Tracking pixels are also an increasingly unreliable signal (Apple
-  Mail Privacy Protection and Gmail's own image proxy both prefetch images regardless of whether a human opened
-  the email) and are a common spam-filter trigger in their own right - a bad trade for a domain that's still
-  building sending reputation.
+- **Open/click tracking** - specifically a tracking pixel, and a link rewritten through a tracking/redirect
+  domain instead of pointing straight at its real destination. This tool does send real HTML (see Features
+  above), so it's not a "plain text only" constraint - it's that these two mechanisms are themselves the
+  deliverability risk (both are extremely common spam-filter signals) and an unreliable one besides (Apple Mail
+  Privacy Protection and Gmail's own image proxy both prefetch tracking pixels regardless of whether a human
+  opened the email, so the "open rate" it would produce is already noisy). Every link in this tool points
+  straight at its real URL, with nothing added on top.
 - **Full mailbox warm-up** (automated send/open/reply *engagement* traffic across a network of seed mailboxes,
   the way Instantly/Mailreach/Warmup Inbox do it, to actively build sending reputation) - this only works if
   it's plugged into many real mailboxes across many real providers, so the receiving side's spam filters see

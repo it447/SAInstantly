@@ -111,72 +111,110 @@ function setUpMobileNav(sidebar) {
   sidebar.querySelectorAll(".nav-item").forEach((a) => a.addEventListener("click", closeSidebar));
 }
 
-// JS mirror of api/_lib/utils.py's render_links/render_text_styles, for a
-// live "what will this actually look like when sent" preview in the editor -
-// merge tags ({{property}}) are left as-is (no fake sample data), but links
-// and bold/italic/underline are rendered exactly as they'll go out, so
-// pasted text that happens to contain stray **/*/__ characters (e.g. a
-// markdown-formatted draft) shows its real, possibly-surprising result
-// before it's ever saved or sent.
-function previewLinks(text) {
-  if (!text) return text;
-  return text.replace(/\[([^[\]]+)\]\((https?:\/\/[^\s()]+)\)/g, (_, label, url) => `${label} (${url})`);
-}
+// JS mirror of api/_lib/utils.py's _tokenize_markup/render_plain/render_html,
+// for a live "what will this actually look like when sent" preview - merge
+// tags ({{property}}) are left as-is (no fake sample data), but links and
+// bold/italic/underline are rendered for real (the body preview is injected
+// as actual HTML, matching the real multipart/alternative HTML part this
+// tool now sends), so pasted text that happens to contain stray **/*/__
+// characters (e.g. a markdown-formatted draft) shows its real result before
+// it's ever saved or sent.
+const LINK_TOKEN_RE = /\[([^[\]]+)\]\((https?:\/\/[^\s()]+)\)/y;
 
-function _boldChar(c) {
-  if (c >= "A" && c <= "Z") return String.fromCodePoint(0x1d400 + (c.charCodeAt(0) - 65));
-  if (c >= "a" && c <= "z") return String.fromCodePoint(0x1d41a + (c.charCodeAt(0) - 97));
-  if (c >= "0" && c <= "9") return String.fromCodePoint(0x1d7ce + (c.charCodeAt(0) - 48));
-  return c;
-}
-
-function _italicChar(c) {
-  if (c === "h") return "ℎ";
-  if (c >= "A" && c <= "Z") return String.fromCodePoint(0x1d434 + (c.charCodeAt(0) - 65));
-  if (c >= "a" && c <= "z") return String.fromCodePoint(0x1d44e + (c.charCodeAt(0) - 97));
-  return c;
-}
-
-function _underlineChar(c) {
-  return c + "̲";
-}
-
-function _mapStyled(text, charFn) {
-  const urlRe = /https?:\/\/\S+/g;
-  let result = "";
-  let last = 0;
-  let m;
-  while ((m = urlRe.exec(text)) !== null) {
-    result += Array.from(text.slice(last, m.index)).map(charFn).join("");
-    result += m[0];
-    last = m.index + m[0].length;
+function tokenizeMarkup(text) {
+  const tokens = [];
+  let i = 0;
+  let buf = "";
+  const flush = () => {
+    if (buf) {
+      tokens.push({ type: "text", value: buf });
+      buf = "";
+    }
+  };
+  while (i < text.length) {
+    LINK_TOKEN_RE.lastIndex = i;
+    const m = LINK_TOKEN_RE.exec(text);
+    if (m) {
+      flush();
+      tokens.push({ type: "link", label: m[1], url: m[2] });
+      i = LINK_TOKEN_RE.lastIndex;
+      continue;
+    }
+    if (text.startsWith("**", i)) {
+      flush();
+      tokens.push({ type: "toggle", tag: "b" });
+      i += 2;
+      continue;
+    }
+    if (text.startsWith("__", i)) {
+      flush();
+      tokens.push({ type: "toggle", tag: "u" });
+      i += 2;
+      continue;
+    }
+    if (text[i] === "*") {
+      flush();
+      tokens.push({ type: "toggle", tag: "i" });
+      i += 1;
+      continue;
+    }
+    buf += text[i];
+    i += 1;
   }
-  result += Array.from(text.slice(last)).map(charFn).join("");
-  return result;
+  flush();
+  return tokens;
 }
 
-function previewTextStyles(text) {
+function renderPreviewPlain(text) {
   if (!text) return text;
-  text = text.replace(/\*\*([^*]+)\*\*/g, (_, inner) => _mapStyled(inner, _boldChar));
-  text = text.replace(/\*([^*]+)\*/g, (_, inner) => _mapStyled(inner, _italicChar));
-  text = text.replace(/__([^_]+)__/g, (_, inner) => _mapStyled(inner, _underlineChar));
-  return text;
+  return tokenizeMarkup(text)
+    .map((tok) => {
+      if (tok.type === "text") return tok.value;
+      if (tok.type === "link") return `${tok.label} (${tok.url})`;
+      return "";
+    })
+    .join("");
 }
 
-function renderSendPreview(text) {
-  return previewTextStyles(previewLinks(text || ""));
+const STYLE_TAG_HTML = { b: "strong", i: "em", u: "u" };
+
+function renderPreviewHtml(text) {
+  if (!text) return text;
+  const openTags = [];
+  const out = [];
+  tokenizeMarkup(text).forEach((tok) => {
+    if (tok.type === "text") {
+      out.push(escapeHtml(tok.value).replace(/\n/g, "<br>\n"));
+    } else if (tok.type === "link") {
+      out.push(`<a href="${escapeHtml(tok.url)}">${escapeHtml(tok.label)}</a>`);
+    } else {
+      const idx = openTags.indexOf(tok.tag);
+      if (idx !== -1) {
+        out.push(`</${STYLE_TAG_HTML[tok.tag]}>`);
+        openTags.splice(idx, 1);
+      } else {
+        out.push(`<${STYLE_TAG_HTML[tok.tag]}>`);
+        openTags.push(tok.tag);
+      }
+    }
+  });
+  for (let i = openTags.length - 1; i >= 0; i--) {
+    out.push(`</${STYLE_TAG_HTML[openTags[i]]}>`);
+  }
+  return out.join("");
 }
 
 // Wires a preview toggle button to show/hide a live "as it will be sent"
-// render of subjectInput/bodyInput's current text (see renderSendPreview
-// above), updating on every keystroke while visible.
+// render of subjectInput/bodyInput's current text - the subject preview is
+// plain text (subject headers never render HTML), the body preview is real
+// rendered HTML, updating on every keystroke while visible.
 function wireSendPreview(toggleBtn, previewBlock, previewSubjectEl, previewBodyEl, subjectInput, bodyInput) {
   function isOpen() {
     return previewBlock.style.display !== "none";
   }
   function render() {
-    if (previewSubjectEl) previewSubjectEl.textContent = renderSendPreview(subjectInput ? subjectInput.value : "");
-    previewBodyEl.textContent = renderSendPreview(bodyInput.value);
+    if (previewSubjectEl) previewSubjectEl.textContent = renderPreviewPlain(subjectInput ? subjectInput.value : "");
+    previewBodyEl.innerHTML = renderPreviewHtml(bodyInput.value);
   }
   toggleBtn.addEventListener("click", () => {
     const open = isOpen();
