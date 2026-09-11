@@ -16,8 +16,10 @@ Python/Vercel serverless functions + Upstash Redis + vanilla JS frontend.
   change. The signed-in user's email is shown in the sidebar; "Log out" clears the token both client-side and
   in Redis
 - Connect one or more Gmail accounts via OAuth, for inbox rotation. Mailboxes on `PROTECTED_DOMAINS`
-  (defaults to `scalearmy.com`) are refused outright, so the primary domain can never be connected here and
-  mixed into cold-outreach sending — only dedicated cold-outreach domains should be connected
+  (defaults to `scalearmy.com`) are refused outright, so the primary domain can't accidentally get mixed into
+  cold-outreach sending — only dedicated cold-outreach domains should normally be connected. Set
+  `ALLOW_PROTECTED_DOMAIN_SENDING=true` to deliberately lift this when a protected domain genuinely needs to
+  send from here too
 - Multi-step sequence builder with merge tags and per-step delay. Merge tags use HubSpot's own contact
   property names (e.g. `{{firstname}}`, `{{company}}`) so the sequence editor's "Insert merge tag" picker
   can search your actual HubSpot contact properties (`GET /api/hubspot/properties`) and drop the right tag

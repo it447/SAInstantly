@@ -1,3 +1,4 @@
+import os
 import time
 
 from _lib import deliverability, models
@@ -8,6 +9,15 @@ from _lib.utils import is_protected_domain, new_id, now_utc, today_str_local
 
 STATE_TTL_SECONDS = 600
 DEFAULT_DAILY_LIMIT = 50
+
+
+def _protected_domain_sending_allowed():
+    # Off by default on purpose - PROTECTED_DOMAINS exists specifically to
+    # keep the primary domain's reputation isolated from cold-outreach
+    # sending. This is a deliberate, explicit opt-out for when a protected
+    # domain genuinely needs to send from here (e.g. warm outreach to an
+    # existing list), not a general escape hatch.
+    return os.environ.get("ALLOW_PROTECTED_DOMAIN_SENDING", "").strip().lower() == "true"
 
 
 def connect(self):
@@ -58,11 +68,12 @@ def callback(self):
         self._redirect("/accounts.html?error=oauth_failed")
         return
 
-    if role == "sending" and is_protected_domain(email):
+    if role == "sending" and is_protected_domain(email) and not _protected_domain_sending_allowed():
         # Never save tokens for a protected domain - not even long enough to
         # check for an existing refresh_token below. Doesn't apply to seed
         # accounts - those are meant to be neutral personal Gmail addresses
-        # unrelated to any of our own domains anyway.
+        # unrelated to any of our own domains anyway. ALLOW_PROTECTED_DOMAIN_SENDING
+        # lifts this deliberately, when the primary domain itself needs to send.
         self._redirect("/accounts.html?error=protected_domain")
         return
 
