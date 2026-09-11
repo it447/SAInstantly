@@ -24,6 +24,21 @@
 
     <div class="grid stats" id="stats"></div>
 
+    <div class="section card">
+      <h2>Add contacts directly</h2>
+      <p class="muted" style="font-size:0.85rem">
+        Paste a list of email addresses to enroll them into this sequence right away, without connecting a
+        HubSpot list. One per line, or separated by commas/semicolons - either works. Contacts already enrolled
+        elsewhere, suppressed, or already in this sequence are skipped automatically. Merge tags like
+        <code>{{firstname}}</code> will just use their fallback (or render blank) for contacts added this way,
+        since there's no HubSpot data attached.
+      </p>
+      <textarea id="paste-emails" rows="5" placeholder="jane@example.com&#10;john@example.com, sam@example.com"></textarea>
+      <button class="btn" id="import-contacts-btn" style="margin-top:0.75rem">Add to sequence</button>
+      <div class="error" id="import-error" style="display:none; margin-top:0.75rem"></div>
+      <div class="success" id="import-success" style="display:none; margin-top:0.75rem"></div>
+    </div>
+
     <div class="section card" style="margin-top:2rem">
       <div class="row" style="align-items:center; justify-content:space-between; margin-bottom:0.5rem">
         <h2 style="margin:0">Enrolled contacts</h2>
@@ -101,6 +116,45 @@
         tbody.appendChild(tr);
       });
     }
+
+    document.getElementById("import-contacts-btn").addEventListener("click", async () => {
+      const errorEl = document.getElementById("import-error");
+      const successEl = document.getElementById("import-success");
+      const textarea = document.getElementById("paste-emails");
+      const btn = document.getElementById("import-contacts-btn");
+      errorEl.style.display = "none";
+      successEl.style.display = "none";
+
+      const emailsText = textarea.value.trim();
+      if (!emailsText) {
+        errorEl.textContent = "Paste at least one email address.";
+        errorEl.style.display = "block";
+        return;
+      }
+
+      btn.disabled = true;
+      try {
+        const result = await api("/api/sequences/import_contacts", {
+          method: "POST",
+          body: { sequence_id: sequenceId, emails_text: emailsText },
+        });
+        const notes = [];
+        if (result.duplicates) notes.push(`${result.duplicates} duplicate`);
+        if (result.skipped) notes.push(`${result.skipped} already enrolled/suppressed`);
+        if (result.invalid) notes.push(`${result.invalid} not a valid email`);
+        successEl.textContent =
+          `Enrolled ${result.enrolled} of ${result.total} address(es).` +
+          (notes.length ? ` Skipped: ${notes.join(", ")}.` : "");
+        successEl.style.display = "block";
+        textarea.value = "";
+        await load();
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.style.display = "block";
+      } finally {
+        btn.disabled = false;
+      }
+    });
 
     document.getElementById("stats").addEventListener("click", (e) => {
       const tile = e.target.closest(".stat-tile[data-filter]");

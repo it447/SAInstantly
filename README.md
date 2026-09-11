@@ -39,6 +39,11 @@ Python/Vercel serverless functions + Upstash Redis + vanilla JS frontend.
   scripts pass through unstyled rather than break, and a URL is never restyled so a bolded link stays a real,
   working address
 - HubSpot list → sequence connection: new list members are auto-enrolled (deduped so a contact is never enrolled twice in the same sequence)
+- **Add contacts directly, no HubSpot required**: on a sequence's detail page, paste a list of email addresses
+  (one per line, or comma/semicolon-separated) to enroll them immediately — goes through the exact same
+  enrollment path as HubSpot sync, so suppression/dedup/warm-up all apply identically. There's no property data
+  from this path, so a merge tag like `{{firstname}}` just renders its fallback (or blank) for these contacts.
+  Capped at 2,000 addresses per paste; the sequence must be active
 - Scheduled sending (cron every 15 min): a contact's first email in a sequence goes out within a few minutes
   of enrollment (so leads hear back within ~30 minutes), later steps spread across the 8am–6pm ET window;
   respects a global daily cap (default 500) and per-account daily limits
