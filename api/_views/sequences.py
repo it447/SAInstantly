@@ -1,6 +1,11 @@
+import re
+
 from _lib import enrollment, gmail, models
 from _lib.auth import require_auth
 from _lib.utils import new_id, now_utc, render_links, render_text_styles
+
+MAX_IMPORT_ROWS = 2000
+EMAIL_SPLIT_RE = re.compile(r"[\s,;]+")
 
 
 def _validate(body):
@@ -177,6 +182,71 @@ def detail(self):
             "stats": stats,
             "contacts": contacts,
         },
+    )
+
+
+def import_contacts(self):
+    """Bulk-enroll contacts from a pasted list of email addresses, bypassing
+    HubSpot entirely - for a sequence that doesn't have (or doesn't need) a
+    HubSpot list mapping. Reuses enrollment.enroll_contact(), the exact same
+    path the HubSpot sync cron uses, so suppression/dedup/warm-up all apply
+    identically regardless of where a contact came from. There's no property
+    data from this path, so a step referencing {{firstname}} renders that
+    tag's fallback (or blank) for these contacts."""
+    if not require_auth(self):
+        return
+
+    body = self._read_json_body()
+    sequence_id = body.get("sequence_id")
+    emails_text = body.get("emails_text") or ""
+    if not sequence_id:
+        self._send_json(400, {"error": "sequence_id is required"})
+        return
+    if not emails_text.strip():
+        self._send_json(400, {"error": "Paste at least one email address"})
+        return
+
+    sequence = models.get_sequence(sequence_id)
+    if not sequence or sequence.get("archived"):
+        self._send_json(404, {"error": "sequence not found"})
+        return
+    if sequence.get("status") != "active":
+        # Matches the HubSpot sync cron's own rule (_sync_mapping in cron.py)
+        # so a contact's enrollment path never depends on how they got in.
+        self._send_json(400, {"error": "This sequence is paused - activate it before adding contacts."})
+        return
+
+    raw_emails = [e for e in EMAIL_SPLIT_RE.split(emails_text) if e]
+    if len(raw_emails) > MAX_IMPORT_ROWS:
+        self._send_json(
+            400,
+            {"error": f"That's {len(raw_emails)} addresses - please paste {MAX_IMPORT_ROWS} or fewer at a time"},
+        )
+        return
+
+    enrolled = 0
+    skipped = 0
+    invalid = 0
+    duplicates = 0
+    seen = set()
+    for raw in raw_emails:
+        email = raw.strip().lower().strip(",;")
+        if not email or "@" not in email:
+            invalid += 1
+            continue
+        if email in seen:
+            duplicates += 1
+            continue
+        seen.add(email)
+        result = enrollment.enroll_contact(sequence_id, {"email": email, "properties": {"email": email}}, source="pasted_list")
+        if result:
+            enrolled += 1
+        else:
+            skipped += 1
+
+    self._send_json(
+        200,
+        {"enrolled": enrolled, "skipped": skipped, "invalid": invalid, "duplicates": duplicates, "total": len(raw_emails)},
     )
 
 
