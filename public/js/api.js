@@ -111,6 +111,83 @@ function setUpMobileNav(sidebar) {
   sidebar.querySelectorAll(".nav-item").forEach((a) => a.addEventListener("click", closeSidebar));
 }
 
+// JS mirror of api/_lib/utils.py's render_links/render_text_styles, for a
+// live "what will this actually look like when sent" preview in the editor -
+// merge tags ({{property}}) are left as-is (no fake sample data), but links
+// and bold/italic/underline are rendered exactly as they'll go out, so
+// pasted text that happens to contain stray **/*/__ characters (e.g. a
+// markdown-formatted draft) shows its real, possibly-surprising result
+// before it's ever saved or sent.
+function previewLinks(text) {
+  if (!text) return text;
+  return text.replace(/\[([^[\]]+)\]\((https?:\/\/[^\s()]+)\)/g, (_, label, url) => `${label} (${url})`);
+}
+
+function _boldChar(c) {
+  if (c >= "A" && c <= "Z") return String.fromCodePoint(0x1d400 + (c.charCodeAt(0) - 65));
+  if (c >= "a" && c <= "z") return String.fromCodePoint(0x1d41a + (c.charCodeAt(0) - 97));
+  if (c >= "0" && c <= "9") return String.fromCodePoint(0x1d7ce + (c.charCodeAt(0) - 48));
+  return c;
+}
+
+function _italicChar(c) {
+  if (c === "h") return "ℎ";
+  if (c >= "A" && c <= "Z") return String.fromCodePoint(0x1d434 + (c.charCodeAt(0) - 65));
+  if (c >= "a" && c <= "z") return String.fromCodePoint(0x1d44e + (c.charCodeAt(0) - 97));
+  return c;
+}
+
+function _underlineChar(c) {
+  return c + "̲";
+}
+
+function _mapStyled(text, charFn) {
+  const urlRe = /https?:\/\/\S+/g;
+  let result = "";
+  let last = 0;
+  let m;
+  while ((m = urlRe.exec(text)) !== null) {
+    result += Array.from(text.slice(last, m.index)).map(charFn).join("");
+    result += m[0];
+    last = m.index + m[0].length;
+  }
+  result += Array.from(text.slice(last)).map(charFn).join("");
+  return result;
+}
+
+function previewTextStyles(text) {
+  if (!text) return text;
+  text = text.replace(/\*\*([^*]+)\*\*/g, (_, inner) => _mapStyled(inner, _boldChar));
+  text = text.replace(/\*([^*]+)\*/g, (_, inner) => _mapStyled(inner, _italicChar));
+  text = text.replace(/__([^_]+)__/g, (_, inner) => _mapStyled(inner, _underlineChar));
+  return text;
+}
+
+function renderSendPreview(text) {
+  return previewTextStyles(previewLinks(text || ""));
+}
+
+// Wires a preview toggle button to show/hide a live "as it will be sent"
+// render of subjectInput/bodyInput's current text (see renderSendPreview
+// above), updating on every keystroke while visible.
+function wireSendPreview(toggleBtn, previewBlock, previewSubjectEl, previewBodyEl, subjectInput, bodyInput) {
+  function isOpen() {
+    return previewBlock.style.display !== "none";
+  }
+  function render() {
+    if (previewSubjectEl) previewSubjectEl.textContent = renderSendPreview(subjectInput ? subjectInput.value : "");
+    previewBodyEl.textContent = renderSendPreview(bodyInput.value);
+  }
+  toggleBtn.addEventListener("click", () => {
+    const open = isOpen();
+    previewBlock.style.display = open ? "none" : "block";
+    toggleBtn.textContent = open ? "Show preview" : "Hide preview";
+    if (!open) render();
+  });
+  bodyInput.addEventListener("input", () => isOpen() && render());
+  if (subjectInput) subjectInput.addEventListener("input", () => isOpen() && render());
+}
+
 // Wires a "+ Add link" button to insert a [text](url) tag into whichever
 // textarea getTarget() currently points at - selected text becomes the link
 // text, or "link" if nothing was selected. Rendered at send time as

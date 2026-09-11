@@ -117,6 +117,15 @@
         <button type="button" class="btn secondary style-btn style-italic" title="Italic">I</button>
         <button type="button" class="btn secondary style-btn style-underline" title="Underline">U</button>
       </div>
+      <div class="preview-toggle">
+        <button type="button" class="btn secondary preview-toggle-btn">Show preview</button>
+      </div>
+      <div class="step-preview" style="display:none">
+        <label class="muted" style="font-size:0.75rem">Subject, as it will actually send</label>
+        <div class="preview-subject"></div>
+        <label class="muted" style="font-size:0.75rem; margin-top:0.6rem; display:block">Body, as it will actually send</label>
+        <div class="preview-body"></div>
+      </div>
     </div>
   </template>
 
@@ -235,6 +244,15 @@
       wireInlineStyle(card.querySelector(".style-bold"), () => lastFocused, "**", "bold text");
       wireInlineStyle(card.querySelector(".style-italic"), () => lastFocused, "*", "italic text");
       wireInlineStyle(card.querySelector(".style-underline"), () => lastFocused, "__", "underlined text");
+
+      wireSendPreview(
+        card.querySelector(".preview-toggle-btn"),
+        card.querySelector(".step-preview"),
+        card.querySelector(".preview-subject"),
+        card.querySelector(".preview-body"),
+        subjectInput,
+        bodyInput
+      );
     }
 
     document.addEventListener("click", (e) => {

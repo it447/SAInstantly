@@ -37,7 +37,11 @@ Python/Vercel serverless functions + Upstash Redis + vanilla JS frontend.
   trick fancy-text generators use, e.g. **𝐁𝐨𝐥𝐝**), not markup, since a plain-text email has no formatting layer
   to apply markup to. Only works for standard English letters/numbers — accented letters, emoji, and non-Latin
   scripts pass through unstyled rather than break, and a URL is never restyled so a bolded link stays a real,
-  working address
+  working address. Pasted text that already contains `**`/`*`/`__` (e.g. a markdown-formatted AI draft) gets
+  interpreted the same way, which can produce unwanted styling — click **Show preview** on a step (or the reply
+  box) to see the exact plain-text output, links and styling included, before saving or sending. Nested markers
+  (e.g. italic inside bold) aren't parsed correctly and will look wrong in the preview - a sign to remove the
+  inner marker rather than something the preview itself gets wrong
 - HubSpot list → sequence connection: new list members are auto-enrolled (deduped so a contact is never enrolled twice in the same sequence)
 - **Add contacts directly, no HubSpot required**: on a sequence's detail page, paste a list of email addresses
   (one per line, or comma/semicolon-separated) to enroll them immediately — goes through the exact same
