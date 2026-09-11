@@ -28,8 +28,13 @@
       <div class="field">
         <textarea id="reply-body" placeholder="Type your reply…" rows="6"></textarea>
       </div>
-      <div class="link-picker" style="margin-left:0; margin-bottom:1rem">
+      <div class="link-picker" style="margin-left:0">
         <button type="button" class="btn secondary" id="reply-link-btn">+ Add link</button>
+      </div>
+      <div class="style-picker" style="margin-left:0; margin-bottom:1rem">
+        <button type="button" class="btn secondary style-btn style-bold" id="reply-bold-btn" title="Bold">B</button>
+        <button type="button" class="btn secondary style-btn style-italic" id="reply-italic-btn" title="Italic">I</button>
+        <button type="button" class="btn secondary style-btn style-underline" id="reply-underline-btn" title="Underline">U</button>
       </div>
       <button class="btn" id="send-reply-btn">Send reply</button>
       <div class="error" id="reply-error" style="display:none"></div>
@@ -96,6 +101,9 @@
     }
 
     wireLinkInsert(document.getElementById("reply-link-btn"), () => document.getElementById("reply-body"));
+    wireInlineStyle(document.getElementById("reply-bold-btn"), () => document.getElementById("reply-body"), "**", "bold text");
+    wireInlineStyle(document.getElementById("reply-italic-btn"), () => document.getElementById("reply-body"), "*", "italic text");
+    wireInlineStyle(document.getElementById("reply-underline-btn"), () => document.getElementById("reply-body"), "__", "underlined text");
 
     document.getElementById("send-reply-btn").addEventListener("click", async () => {
       const errorEl = document.getElementById("reply-error");

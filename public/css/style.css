@@ -203,6 +203,12 @@ label { font-size: 0.85rem; color: var(--muted); display: block; margin-bottom: 
 .link-insert-panel input { flex: 1; margin: 0; }
 .link-insert-panel .btn { flex: 0; white-space: nowrap; padding: 0.5rem 0.75rem; }
 
+.style-picker { display: inline-flex; gap: 0.3rem; margin-left: 0.5rem; }
+.style-btn { min-width: 2.4rem; text-align: center; padding: 0.5rem 0.6rem; font-family: inherit; }
+.style-btn.style-bold { font-weight: 700; }
+.style-btn.style-italic { font-style: italic; }
+.style-btn.style-underline { text-decoration: underline; }
+
 .muted { color: var(--muted); }
 .error, .success {
   font-size: 0.88rem; margin-top: 0.75rem; padding: 0.75rem 1rem;
