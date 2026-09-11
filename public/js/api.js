@@ -175,6 +175,33 @@ function wireLinkInsert(button, getTarget) {
   });
 }
 
+// Wires a bold/italic/underline button to wrap the selection in whichever
+// textarea getTarget() currently points at with `marker` on both sides
+// (e.g. "**selected text**") - or insert `marker + placeholder + marker` and
+// select the placeholder if nothing was selected, so typing replaces it
+// immediately. Rendered at send time as real Unicode styled characters (see
+// api/_lib/utils.py render_text_styles), since a plain-text email has no
+// formatting layer to apply markup to.
+function wireInlineStyle(button, getTarget, marker, placeholder) {
+  button.addEventListener("click", () => {
+    const textarea = getTarget();
+    if (!textarea) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selected = textarea.value.slice(start, end);
+    const inner = selected || placeholder;
+    const tag = `${marker}${inner}${marker}`;
+    textarea.value = textarea.value.slice(0, start) + tag + textarea.value.slice(end);
+    textarea.focus();
+    if (selected) {
+      const pos = start + tag.length;
+      textarea.setSelectionRange(pos, pos);
+    } else {
+      textarea.setSelectionRange(start + marker.length, start + marker.length + inner.length);
+    }
+  });
+}
+
 function escapeHtml(str) {
   return String(str == null ? "" : str).replace(/[&<>"']/g, (c) => ({
     "&": "&amp;",

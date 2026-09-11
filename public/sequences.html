@@ -54,8 +54,10 @@
           <code>{{firstname|there}}</code> that falls back to that text when the contact's property is blank.
           Select some text and click <strong>Add link</strong> to attach a URL to it - emails stay plain text, so
           it sends as "text (https://…)" rather than a hidden link, but it's still a real, clickable URL in any
-          mail client. A "Reply STOP if you don't want me to contact you anymore" line is appended to every email
-          automatically.
+          mail client. Select text and click <strong>B</strong>/<strong>I</strong>/<strong>U</strong> to bold,
+          italicize, or underline it - rendered as real styled characters, not markup, since a plain-text email
+          has nowhere to apply formatting to (works for standard English letters/numbers only). A "Reply STOP if
+          you don't want me to contact you anymore" line is appended to every email automatically.
         </div>
 
         <div id="steps"></div>
@@ -109,6 +111,11 @@
       </div>
       <div class="link-picker">
         <button type="button" class="btn secondary link-btn">+ Add link</button>
+      </div>
+      <div class="style-picker">
+        <button type="button" class="btn secondary style-btn style-bold" title="Bold">B</button>
+        <button type="button" class="btn secondary style-btn style-italic" title="Italic">I</button>
+        <button type="button" class="btn secondary style-btn style-underline" title="Underline">U</button>
       </div>
     </div>
   </template>
@@ -225,6 +232,9 @@
       tokenSearch.addEventListener("input", () => renderTokenList(tokenSearch.value));
 
       wireLinkInsert(card.querySelector(".link-btn"), () => lastFocused);
+      wireInlineStyle(card.querySelector(".style-bold"), () => lastFocused, "**", "bold text");
+      wireInlineStyle(card.querySelector(".style-italic"), () => lastFocused, "*", "italic text");
+      wireInlineStyle(card.querySelector(".style-underline"), () => lastFocused, "__", "underlined text");
     }
 
     document.addEventListener("click", (e) => {

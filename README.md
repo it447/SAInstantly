@@ -32,6 +32,12 @@ Python/Vercel serverless functions + Upstash Redis + vanilla JS frontend.
   "Add link" to attach a URL — stored as `[text](url)`. Since every email here is still sent as plain text on
   purpose (see Deliverability below), it renders as `text (https://…)` rather than a hidden `<a href>` link —
   a real, clickable URL in any mail client, always shown next to whatever it's describing instead of disguised
+- **Bold/italic/underline, kept plain-text**: select text and click **B**/*I*/<u>U</u>, or type `**bold**`,
+  `*italic*`, `__underline__` directly — rendered at send time as real Unicode "styled" characters (the same
+  trick fancy-text generators use, e.g. **𝐁𝐨𝐥𝐝**), not markup, since a plain-text email has no formatting layer
+  to apply markup to. Only works for standard English letters/numbers — accented letters, emoji, and non-Latin
+  scripts pass through unstyled rather than break, and a URL is never restyled so a bolded link stays a real,
+  working address
 - HubSpot list → sequence connection: new list members are auto-enrolled (deduped so a contact is never enrolled twice in the same sequence)
 - Scheduled sending (cron every 15 min): a contact's first email in a sequence goes out within a few minutes
   of enrollment (so leads hear back within ~30 minutes), later steps spread across the 8am–6pm ET window;

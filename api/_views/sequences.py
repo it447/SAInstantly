@@ -1,6 +1,6 @@
 from _lib import enrollment, gmail, models
 from _lib.auth import require_auth
-from _lib.utils import new_id, now_utc, render_links
+from _lib.utils import new_id, now_utc, render_links, render_text_styles
 
 
 def _validate(body):
@@ -287,7 +287,7 @@ def reply(self):
             subject = f"Re: {subject}"
 
         signature = (account.get("signature") or "").strip()
-        rendered_reply = render_links(reply_body)
+        rendered_reply = render_text_styles(render_links(reply_body))
         full_body = f"{rendered_reply}\n\n{signature}" if signature else rendered_reply
 
         send_result = gmail.send_message(

@@ -171,6 +171,65 @@ def render_links(text):
     return LINK_RE.sub(lambda m: f"{m.group(1)} ({m.group(2)})", text)
 
 
+# Plain-text bold/italic/underline: **bold**, *italic*, __underline__ render as
+# real Unicode "styled" characters (the Mathematical Alphanumeric Symbols
+# block, plus a combining underline mark) rather than markup - there's no
+# formatting layer in a plain-text email, so this is the only way bold/italic/
+# underline can show up as anything other than literal asterisks. Only covers
+# basic Latin letters and digits; accented letters, emoji, and non-Latin
+# scripts pass through unstyled instead of breaking. A URL is never restyled,
+# so a bolded or italicized link is still the exact, working address it
+# started as.
+BOLD_RE = re.compile(r"\*\*([^*]+)\*\*")
+ITALIC_RE = re.compile(r"\*([^*]+)\*")
+UNDERLINE_RE = re.compile(r"__([^_]+)__")
+URL_RE = re.compile(r"https?://\S+")
+
+
+def _bold_char(c):
+    if "A" <= c <= "Z":
+        return chr(0x1D400 + (ord(c) - ord("A")))
+    if "a" <= c <= "z":
+        return chr(0x1D41A + (ord(c) - ord("a")))
+    if "0" <= c <= "9":
+        return chr(0x1D7CE + (ord(c) - ord("0")))
+    return c
+
+
+def _italic_char(c):
+    if c == "h":
+        return "ℎ"  # the italic block has no lowercase h; this is its standard stand-in
+    if "A" <= c <= "Z":
+        return chr(0x1D434 + (ord(c) - ord("A")))
+    if "a" <= c <= "z":
+        return chr(0x1D44E + (ord(c) - ord("a")))
+    return c  # no italic variant exists for digits/punctuation
+
+
+def _underline_char(c):
+    return c + "̲"  # combining low line, drawn under the preceding character
+
+
+def _map_styled(text, char_fn):
+    parts = []
+    last = 0
+    for m in URL_RE.finditer(text):
+        parts.append("".join(char_fn(c) for c in text[last:m.start()]))
+        parts.append(m.group(0))
+        last = m.end()
+    parts.append("".join(char_fn(c) for c in text[last:]))
+    return "".join(parts)
+
+
+def render_text_styles(text):
+    if not text:
+        return text
+    text = BOLD_RE.sub(lambda m: _map_styled(m.group(1), _bold_char), text)
+    text = ITALIC_RE.sub(lambda m: _map_styled(m.group(1), _italic_char), text)
+    text = UNDERLINE_RE.sub(lambda m: _map_styled(m.group(1), _underline_char), text)
+    return text
+
+
 def sequence_merge_tag_properties(sequence):
     """Every {{property}} referenced across a sequence's steps, plus `email`
     (always needed for dedup/sending/threading)."""
