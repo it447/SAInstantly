@@ -1,3 +1,4 @@
+import html
 import json
 import os
 import random
@@ -157,77 +158,109 @@ def merge_tags_in(text):
     return {name for name, _default in MERGE_TAG_RE.findall(text or "")}
 
 
-# Emails stay plain text on purpose (see README - links/HTML are a deliverability
-# trade-off this tool avoids), so a link can't hide its URL under different
-# display text the way a real <a href> would. [text](url) instead renders as
-# "text (url)" - a real, clickable URL in any mail client, always shown next to
-# the text describing it rather than disguised.
+# Every email is sent as multipart/alternative: a real HTML part (real
+# <strong>/<em>/<u>/<a> tags) plus a plain-text fallback in the same message -
+# not HTML plus tracking. The actual deliverability risk this tool avoids is
+# specifically open/click tracking (a tracking pixel, or a link rewritten
+# through a redirect domain) - see README - not HTML formatting itself, which
+# every legitimate business email uses with no penalty. [text](url) and
+# **bold**/*italic*/__underline__ are the authoring syntax; render_html() and
+# render_plain() below both read the same syntax so they never disagree about
+# what counts as a marker.
 LINK_RE = re.compile(r"\[([^\[\]]+)\]\((https?://[^\s()]+)\)")
 
+_TAG_HTML = {"b": "strong", "i": "em", "u": "u"}
 
-def render_links(text):
+
+def _tokenize_markup(text):
+    """Walks `text` once, yielding ('text', str) for literal spans,
+    ('link', label, url) for [label](url), and ('toggle', 'b'|'i'|'u') for a
+    **/*/__ marker - a single shared pass so the plain-text and HTML
+    renderers can never disagree about what's a marker versus a stray
+    character. Markers simply toggle on/off in the order they appear, so
+    proper nesting (**bold *and italic* still bold**) round-trips correctly;
+    only genuinely overlapping (not nested) markers are on the user to avoid.
+    """
+    i, n = 0, len(text)
+    buf = []
+    while i < n:
+        m = LINK_RE.match(text, i)
+        if m:
+            if buf:
+                yield ("text", "".join(buf))
+                buf = []
+            yield ("link", m.group(1), m.group(2))
+            i = m.end()
+            continue
+        if text.startswith("**", i):
+            if buf:
+                yield ("text", "".join(buf))
+                buf = []
+            yield ("toggle", "b")
+            i += 2
+            continue
+        if text.startswith("__", i):
+            if buf:
+                yield ("text", "".join(buf))
+                buf = []
+            yield ("toggle", "u")
+            i += 2
+            continue
+        if text[i] == "*":
+            if buf:
+                yield ("text", "".join(buf))
+                buf = []
+            yield ("toggle", "i")
+            i += 1
+            continue
+        buf.append(text[i])
+        i += 1
+    if buf:
+        yield ("text", "".join(buf))
+
+
+def render_plain(text):
+    """The plain-text alternative part: markers are simply removed (no fake
+    styling), and a link renders as "label (url)" - a real, clickable URL,
+    just always shown next to its label instead of hidden."""
     if not text:
         return text
-    return LINK_RE.sub(lambda m: f"{m.group(1)} ({m.group(2)})", text)
+    out = []
+    for tok in _tokenize_markup(text):
+        if tok[0] == "text":
+            out.append(tok[1])
+        elif tok[0] == "link":
+            out.append(f"{tok[1]} ({tok[2]})")
+        # ("toggle", ...) contributes nothing in plain text
+    return "".join(out)
 
 
-# Plain-text bold/italic/underline: **bold**, *italic*, __underline__ render as
-# real Unicode "styled" characters (the Mathematical Alphanumeric Symbols
-# block, plus a combining underline mark) rather than markup - there's no
-# formatting layer in a plain-text email, so this is the only way bold/italic/
-# underline can show up as anything other than literal asterisks. Only covers
-# basic Latin letters and digits; accented letters, emoji, and non-Latin
-# scripts pass through unstyled instead of breaking. A URL is never restyled,
-# so a bolded or italicized link is still the exact, working address it
-# started as.
-BOLD_RE = re.compile(r"\*\*([^*]+)\*\*")
-ITALIC_RE = re.compile(r"\*([^*]+)\*")
-UNDERLINE_RE = re.compile(r"__([^_]+)__")
-URL_RE = re.compile(r"https?://\S+")
-
-
-def _bold_char(c):
-    if "A" <= c <= "Z":
-        return chr(0x1D400 + (ord(c) - ord("A")))
-    if "a" <= c <= "z":
-        return chr(0x1D41A + (ord(c) - ord("a")))
-    if "0" <= c <= "9":
-        return chr(0x1D7CE + (ord(c) - ord("0")))
-    return c
-
-
-def _italic_char(c):
-    if c == "h":
-        return "ℎ"  # the italic block has no lowercase h; this is its standard stand-in
-    if "A" <= c <= "Z":
-        return chr(0x1D434 + (ord(c) - ord("A")))
-    if "a" <= c <= "z":
-        return chr(0x1D44E + (ord(c) - ord("a")))
-    return c  # no italic variant exists for digits/punctuation
-
-
-def _underline_char(c):
-    return c + "̲"  # combining low line, drawn under the preceding character
-
-
-def _map_styled(text, char_fn):
-    parts = []
-    last = 0
-    for m in URL_RE.finditer(text):
-        parts.append("".join(char_fn(c) for c in text[last:m.start()]))
-        parts.append(m.group(0))
-        last = m.end()
-    parts.append("".join(char_fn(c) for c in text[last:]))
-    return "".join(parts)
-
-
-def render_text_styles(text):
+def render_html(text):
+    """The real HTML part: **/*/__ become <strong>/<em>/<u>, [label](url)
+    becomes a real <a href>, and newlines become <br> since HTML otherwise
+    collapses them. All literal text is escaped."""
     if not text:
         return text
-    text = BOLD_RE.sub(lambda m: _map_styled(m.group(1), _bold_char), text)
-    text = ITALIC_RE.sub(lambda m: _map_styled(m.group(1), _italic_char), text)
-    text = UNDERLINE_RE.sub(lambda m: _map_styled(m.group(1), _underline_char), text)
-    return text
+    out = []
+    open_tags = []
+    for tok in _tokenize_markup(text):
+        if tok[0] == "text":
+            out.append(html.escape(tok[1]).replace("\n", "<br>\n"))
+        elif tok[0] == "link":
+            out.append(f'<a href="{html.escape(tok[2])}">{html.escape(tok[1])}</a>')
+        elif tok[0] == "toggle":
+            tag = tok[1]
+            if tag in open_tags:
+                out.append(f"</{_TAG_HTML[tag]}>")
+                open_tags.remove(tag)
+            else:
+                out.append(f"<{_TAG_HTML[tag]}>")
+                open_tags.append(tag)
+    for tag in reversed(open_tags):
+        # An odd number of markers (user forgot to close one) shouldn't leave
+        # invalid, unclosed HTML - close whatever's still open at the end.
+        out.append(f"</{_TAG_HTML[tag]}>")
+    return "".join(out)
 
 
 def sequence_merge_tag_properties(sequence):

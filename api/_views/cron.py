@@ -1,3 +1,4 @@
+import html
 import random
 import re
 import time
@@ -7,9 +8,9 @@ from _lib import deliverability, enrollment, gmail, hubspot_client, models
 from _lib.auth import require_cron_auth
 from _lib.utils import (
     now_local,
-    render_links,
+    render_html,
     render_merge_tags,
-    render_text_styles,
+    render_plain,
     send_window_hours,
     sequence_merge_tag_properties,
 )
@@ -68,13 +69,23 @@ def _in_send_window():
 
 
 def _build_body(step, contact, account):
-    rendered = render_text_styles(render_links(render_merge_tags(step["body"], contact.get("properties", {}))))
-    parts = [rendered]
+    """Returns (plain_body, html_body) - sent together as multipart/alternative
+    (see gmail.send_message) so real formatting shows in any mail client
+    while a clean plain-text copy still exists for anything that can't render
+    HTML."""
+    raw = render_merge_tags(step["body"], contact.get("properties", {}))
+    footer = "Reply STOP if you don't want me to contact you anymore."
     signature = (account.get("signature") or "").strip()
+
+    plain_parts = [render_plain(raw)]
+    html_parts = [render_html(raw)]
     if signature:
-        parts.append(signature)
-    parts.append("---\nReply STOP if you don't want me to contact you anymore.")
-    return "\n\n".join(parts)
+        plain_parts.append(signature)
+        html_parts.append(html.escape(signature).replace("\n", "<br>\n"))
+    plain_parts.append(f"---\n{footer}")
+    html_parts.append(f"---<br>\n{footer}")
+
+    return "\n\n".join(plain_parts), "<br><br>\n".join(html_parts)
 
 
 def _run_send():
@@ -135,10 +146,12 @@ def _run_send():
 
         step = steps[step_index]
         contact = enr["contact"]
-        subject = render_text_styles(render_links(render_merge_tags(step["subject"], contact.get("properties", {}))))
+        # Subject lines are always plain text (no mail client renders HTML in
+        # a subject header), so markers are just stripped, never converted to tags.
+        subject = render_plain(render_merge_tags(step["subject"], contact.get("properties", {})))
 
         try:
-            body = _build_body(step, contact, account)
+            body, html_body = _build_body(step, contact, account)
             access_token, refreshed = gmail.get_valid_access_token(account)
             if refreshed:
                 account.update(refreshed)
@@ -150,6 +163,7 @@ def _run_send():
                 email,
                 subject,
                 body,
+                html_body=html_body,
                 thread_id=enr.get("thread_id"),
                 in_reply_to_message_id=enr.get("last_message_id"),
             )

@@ -2,6 +2,7 @@ import base64
 import os
 import re
 import time
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from html import unescape
 from urllib.parse import urlencode
@@ -126,8 +127,17 @@ def get_valid_access_token(account):
     return updated["access_token"], updated
 
 
-def _build_raw_message(from_email, to_email, subject, body_text, thread_headers=None):
-    msg = MIMEText(body_text, "plain")
+def _build_raw_message(from_email, to_email, subject, body_text, html_body=None, thread_headers=None):
+    if html_body:
+        # multipart/alternative: mail clients that render HTML show html_body
+        # (real <strong>/<em>/<u>/<a> tags); anything that can't falls back to
+        # the plain-text part. No tracking pixel, no rewritten/redirected
+        # links - just real formatting, which isn't the deliverability risk.
+        msg = MIMEMultipart("alternative")
+        msg.attach(MIMEText(body_text, "plain"))
+        msg.attach(MIMEText(html_body, "html"))
+    else:
+        msg = MIMEText(body_text, "plain")
     msg["From"] = from_email
     msg["To"] = to_email
     msg["Subject"] = subject
@@ -139,12 +149,13 @@ def _build_raw_message(from_email, to_email, subject, body_text, thread_headers=
     return raw
 
 
-def send_message(access_token, from_email, to_email, subject, body_text, thread_id=None, in_reply_to_message_id=None):
+def send_message(access_token, from_email, to_email, subject, body_text, html_body=None, thread_id=None, in_reply_to_message_id=None):
     raw = _build_raw_message(
         from_email,
         to_email,
         subject,
         body_text,
+        html_body=html_body,
         thread_headers={"message_id": in_reply_to_message_id} if in_reply_to_message_id else None,
     )
     payload = {"raw": raw}

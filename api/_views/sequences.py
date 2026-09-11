@@ -1,8 +1,9 @@
+import html
 import re
 
 from _lib import enrollment, gmail, models
 from _lib.auth import require_auth
-from _lib.utils import new_id, now_utc, render_links, render_text_styles
+from _lib.utils import new_id, now_utc, render_html, render_plain
 
 MAX_IMPORT_ROWS = 2000
 EMAIL_SPLIT_RE = re.compile(r"[\s,;]+")
@@ -357,15 +358,20 @@ def reply(self):
             subject = f"Re: {subject}"
 
         signature = (account.get("signature") or "").strip()
-        rendered_reply = render_text_styles(render_links(reply_body))
-        full_body = f"{rendered_reply}\n\n{signature}" if signature else rendered_reply
+        plain_reply = render_plain(reply_body)
+        html_reply = render_html(reply_body)
+        if signature:
+            plain_reply = f"{plain_reply}\n\n{signature}"
+            html_signature = html.escape(signature).replace("\n", "<br>\n")
+            html_reply = f"{html_reply}<br><br>\n{html_signature}"
 
         send_result = gmail.send_message(
             access_token,
             account["email"],
             email,
             subject,
-            full_body,
+            plain_reply,
+            html_body=html_reply,
             thread_id=enr["thread_id"],
             in_reply_to_message_id=latest_message_id,
         )
