@@ -127,6 +127,13 @@ def _run_send():
 
         sequence = models.get_sequence(sequence_id)
         if not sequence or sequence.get("archived") or sequence.get("status") != "active":
+            # due_members() always returns the oldest-due items first, capped
+            # at a limit - leaving this item's timestamp untouched would keep
+            # it (and every other item stuck for the same reason) at the
+            # front of that scan forever, starving every other sequence's due
+            # sends out of every future tick. Push it back to retry later
+            # instead of leaving it frozen in place.
+            enrollment.requeue(sequence_id, email, time.time() + RETRY_DELAY_SECONDS)
             continue
 
         step_index = enr["step_index"]
@@ -137,11 +144,11 @@ def _run_send():
 
         account = enrollment.pick_account(accounts, remaining_by_account, sequence.get("account_ids"))
         if not account:
-            # Don't break the whole tick over one sequence's accounts being
-            # out of capacity - a sequence scoped to specific senders can be
-            # exhausted while other accounts still have room for other
-            # sequences' due sends. This item stays queued and gets retried
-            # on a later tick.
+            # Same head-of-queue starvation risk as above - a sequence scoped
+            # to specific senders that's out of capacity must not permanently
+            # occupy the front of the due-items scan. Push it back to retry
+            # later rather than leaving it stuck in place.
+            enrollment.requeue(sequence_id, email, time.time() + RETRY_DELAY_SECONDS)
             continue
 
         step = steps[step_index]
