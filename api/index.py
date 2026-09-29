@@ -39,6 +39,7 @@ ROUTES = {
     ("POST", "/api/accounts/disconnect"): accounts.disconnect,
     ("GET", "/api/sequences/list"): sequences.list_sequences,
     ("POST", "/api/sequences/save"): sequences.save,
+    ("POST", "/api/sequences/clone"): sequences.clone,
     ("POST", "/api/sequences/delete"): sequences.delete,
     ("GET", "/api/sequences/logs"): sequences.logs,
     ("GET", "/api/sequences/detail"): sequences.detail,

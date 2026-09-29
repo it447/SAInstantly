@@ -85,6 +85,33 @@ def save(self):
     self._send_json(200, {"sequence": sequence})
 
 
+def clone(self):
+    if not require_auth(self):
+        return
+
+    body = self._read_json_body()
+    source = models.get_sequence(body.get("id")) if body.get("id") else None
+    if not source:
+        self._send_json(404, {"error": "sequence not found"})
+        return
+
+    name = (body.get("name") or "").strip() or f"{source['name']} (copy)"
+    sequence = {
+        "id": new_id("seq_"),
+        "name": name,
+        "status": "active",
+        "archived": False,
+        # Deep-copied so editing the clone's steps never mutates the source
+        # sequence's own step dicts.
+        "steps": [dict(step) for step in source.get("steps", [])],
+        "account_ids": list(source.get("account_ids", [])),
+        "created_at": now_utc().isoformat(),
+        "updated_at": now_utc().isoformat(),
+    }
+    models.save_sequence(sequence)
+    self._send_json(200, {"sequence": sequence})
+
+
 def delete(self):
     if not require_auth(self):
         return
