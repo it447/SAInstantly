@@ -64,6 +64,7 @@
 
         <div style="margin-top:1.5rem; display:flex; gap:0.75rem">
           <button class="btn" id="save-btn">Save sequence</button>
+          <button class="btn secondary" id="clone-btn" style="display:none">Clone</button>
           <button class="btn danger" id="delete-btn" style="display:none">Delete</button>
         </div>
         <div class="error" id="form-error" style="display:none"></div>
@@ -291,6 +292,7 @@
       document.getElementById("status-select").value = "active";
       document.getElementById("steps").innerHTML = "";
       document.getElementById("delete-btn").style.display = "none";
+      document.getElementById("clone-btn").style.display = "none";
       document.getElementById("logs-card").style.display = "none";
       document.getElementById("view-contacts-link").style.display = "none";
       renderAccountChecklist([]);
@@ -307,6 +309,7 @@
       seq.steps.forEach(addStepRow);
       renderAccountChecklist(seq.account_ids);
       document.getElementById("delete-btn").style.display = "inline-flex";
+      document.getElementById("clone-btn").style.display = "inline-flex";
       const contactsLink = document.getElementById("view-contacts-link");
       contactsLink.href = `/sequence.html?id=${encodeURIComponent(seq.id)}`;
       contactsLink.style.display = "inline";
@@ -399,6 +402,17 @@
       await api("/api/sequences/delete", { method: "POST", body: { id: currentId } });
       await refreshSequences();
       resetEditor();
+    });
+
+    document.getElementById("clone-btn").addEventListener("click", async () => {
+      if (!currentId) return;
+      const source = sequences.find((s) => s.id === currentId);
+      const defaultName = `${source ? source.name : "Sequence"} (copy)`;
+      const name = prompt("Name for the cloned sequence:", defaultName);
+      if (!name) return;
+      const { sequence } = await api("/api/sequences/clone", { method: "POST", body: { id: currentId, name } });
+      await refreshSequences();
+      loadIntoEditor(sequence);
     });
 
     async function init() {
